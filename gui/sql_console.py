@@ -140,7 +140,6 @@ class SqlConsolePanel(QWidget):
     stopRequested = Signal()
     refreshDatabasesRequested = Signal()
     clearRequested = Signal()
-    collapseRequested = Signal()             # свернуть/развернуть панель
     serverChanged = Signal(str)
     scopeChanged = Signal()
 
@@ -177,18 +176,8 @@ class SqlConsolePanel(QWidget):
         self.btn_clear.setIconSize(QSize(16, 16))
         self.btn_clear.setToolTip("Очистить консоль")
 
-        self.btn_collapse = QToolButton()
-        self.btn_collapse.setObjectName("btn_icon")
-        self.btn_collapse.setIcon(
-            icon("expand_less", 16, "@icon_muted")
-        )
-        self.btn_collapse.setIconSize(QSize(16, 16))
-        self.btn_collapse.setToolTip("Свернуть SQL Консоль")
-        self.btn_collapse.clicked.connect(self.collapseRequested)
-
         sctop.addWidget(self.btn_refresh_db)
         sctop.addWidget(self.btn_clear)
-        sctop.addWidget(self.btn_collapse)
 
         layout.addLayout(sctop)
 
