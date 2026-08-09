@@ -11,7 +11,13 @@ gui/sql_console.py
 from __future__ import annotations
 
 from PySide6.QtCore import QRect, QSize, Qt, Signal
-from PySide6.QtGui import QFontDatabase, QKeySequence, QPainter, QShortcut
+from PySide6.QtGui import (
+    QFontDatabase,
+    QKeySequence,
+    QPainter,
+    QShortcut,
+    QTextCursor,
+)
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -427,8 +433,13 @@ class SqlConsolePanel(QWidget):
         return self.editor.toPlainText()
 
     def insert_script(self, text: str) -> None:
-        """Заменяет содержимое редактора текстом скрипта."""
-        self.editor.setPlainText(text)
+        """Добавляет текст скрипта в конец редактора консоли."""
+        cursor = self.editor.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        if self.editor.toPlainText().strip():
+            cursor.insertText("\n")
+        cursor.insertText(text)
+        self.editor.setTextCursor(cursor)
         self.editor.setFocus()
 
     # ----------------------------------------------------------

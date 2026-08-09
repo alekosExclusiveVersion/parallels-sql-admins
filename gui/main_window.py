@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QMenu,
     QApplication,
+    QTabBar,
 )
 
 from backend.repository import Repository
@@ -876,6 +877,10 @@ class MainWindow(QWidget):
         self.tabs.addTab(log_frame, "Журнал")
         self.tabs.setTabsClosable(True)
         self.tabs.tabCloseRequested.connect(self._tab_close_requested)
+
+        bar = self.tabs.tabBar()
+        bar.setTabButton(0, QTabBar.RightSide, None)
+        bar.setTabButton(1, QTabBar.RightSide, None)
 
         self.tabs_frame = QFrame()
         self.tabs_frame.setObjectName("TabsBlock")
