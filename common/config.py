@@ -82,7 +82,11 @@ class LoggingConfig:
     csv: str
     errors: str
     run: str
-    verbose: bool
+    actions: str = "actions"
+    max_bytes: int = 5_000_000
+    backups: int = 3
+    retention_days: int = 30
+    verbose: bool = False
 
 
 @dataclass(frozen=True)
@@ -252,6 +256,10 @@ def load_config(config_file: str | Path | None = None) -> Config:
             csv=p.get("logging", "csv"),
             errors=p.get("logging", "errors"),
             run=p.get("logging", "run"),
+            actions=p.get("logging", "actions", fallback="actions"),
+            max_bytes=p.getint("logging", "max_bytes", fallback=5_000_000),
+            backups=p.getint("logging", "backups", fallback=3),
+            retention_days=p.getint("logging", "retention_days", fallback=30),
             verbose=_bool(p, "logging", "verbose"),
         ),
         output=OutputConfig(

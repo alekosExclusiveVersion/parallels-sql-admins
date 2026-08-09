@@ -22,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from PySide6.QtCore import QObject, Signal, Slot
 
 from common.config import config
+from common.logger import logger
 from common.server_registry import client_for
 from common.sql_splitter import split_statements
 
@@ -131,8 +132,8 @@ class QueryWorker(QObject):
         for host, conn_id in self.active_connections():
             try:
                 client_for(host).kill_connection(host, conn_id)
-            except Exception:
-                pass
+            except Exception as ex:
+                logger.warning(f"KILL {host}/{conn_id} failed: {ex}")
 
     def _execute_statement(
         self,
@@ -254,6 +255,7 @@ class QueryWorker(QObject):
         try:
             self._dispatch()
         except Exception as ex:
+            logger.exception(ex)
             if self._stop:
                 self.stopped.emit(0, 1)
             else:
@@ -287,6 +289,7 @@ class QueryWorker(QObject):
                 self._host, self._database, self._statements, self._row_limit,
             )
         except Exception as ex:
+            logger.exception(ex)
             if self._stop:
                 self.stopped.emit(0, 1)
             else:
@@ -307,6 +310,7 @@ class QueryWorker(QObject):
                 try:
                     names = client_for(host).list_databases(host)
                 except Exception as ex:
+                    logger.exception(ex)
                     self.error_target.emit(host, "", str(ex))
                     continue
 
@@ -355,6 +359,7 @@ class QueryWorker(QObject):
                     host_name, db_name, self._statements, self._row_limit,
                 )
             except Exception as ex:
+                logger.exception(ex)
                 if not self._stop:
                     self.error_target.emit(host_name, db_name, str(ex))
                 return
@@ -472,6 +477,7 @@ class QueryWorker(QObject):
                     try:
                         names = client_for(host).list_databases(host)
                     except Exception as ex:
+                        logger.exception(ex)
                         self.error_target.emit(host, "", str(ex))
                         continue
 
@@ -493,6 +499,7 @@ class QueryWorker(QObject):
                     try:
                         self._export_target(host_name, db_name, writer, state)
                     except Exception as ex:
+                        logger.exception(ex)
                         if self._stop:
                             break
                         self.error_target.emit(host_name, db_name, str(ex))

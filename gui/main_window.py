@@ -33,6 +33,7 @@ from backend.db_sizes_worker import DbSizesWorker
 from common.sql_builder import sql_builder
 from common.sql_security import is_write_statement
 from common.sql_splitter import split_statements
+from common.logger import logger
 from common.version import APP_VERSION
 from common.mysql_client import mysql
 from common.server_registry import (
@@ -341,6 +342,7 @@ class MainWindow(QWidget):
                 "SUCCESS",
                 f"Server removed: {host}",
             )
+            logger.action(f"Server removed: {host}")
             self._load_servers()
 
     def _open_server_dialog(self, spec: ServerSpec | None):
@@ -358,12 +360,20 @@ class MainWindow(QWidget):
                 f"Server added: {new_spec.display_name()} "
                 f"({new_spec.engine})",
             )
+            logger.action(
+                f"Server added: {new_spec.display_name()} "
+                f"({new_spec.engine})"
+            )
         else:
             self.repository.update_server(spec.host, new_spec)
             self.append_log(
                 "SUCCESS",
                 f"Server updated: {spec.host} → {new_spec.display_name()} "
                 f"({new_spec.engine})",
+            )
+            logger.action(
+                f"Server updated: {spec.host} → {new_spec.display_name()} "
+                f"({new_spec.engine})"
             )
 
         self._load_servers()
@@ -384,6 +394,8 @@ class MainWindow(QWidget):
             "SUCCESS",
             f"Server list refreshed ({previous} → {current})"
         )
+
+        logger.action(f"Server list refreshed ({previous} → {current})")
 
     # ----------------------------------------------------------
     # Check
@@ -419,6 +431,11 @@ class MainWindow(QWidget):
                 "INFO",
                 f"Skipped {skipped} MSSQL server(s) — check is MySQL-only.",
             )
+
+        logger.action(
+            f"Check run: {len(mysql_servers)} server(s)"
+            f"{f', {skipped} MSSQL skipped' if skipped else ''}"
+        )
 
         self.worker.set_servers(mysql_servers)
 
@@ -460,6 +477,11 @@ class MainWindow(QWidget):
             "Check completed.",
         )
         self._elapsed_timer.stop()
+
+        elapsed = 0.0
+        if self._started_at is not None:
+            elapsed = time.perf_counter() - self._started_at
+            logger.action(f"Check finished: {elapsed:.2f} s")
 
         self._started_at = None
 
@@ -895,11 +917,17 @@ class MainWindow(QWidget):
         )
 
         self.btn_log_clear.clicked.connect(
-            self.log.clear
+            lambda: (
+                self.log.clear(),
+                logger.action("Log cleared"),
+            )
         )
 
         self.btn_log_copy.clicked.connect(
-            self.log.copy
+            lambda: (
+                self.log.copy(),
+                logger.action("Log copied to clipboard"),
+            )
         )
 
         self.btn_log_save.clicked.connect(
@@ -990,12 +1018,18 @@ class MainWindow(QWidget):
         # Не вызываем setVisible(False): скрытие самого виджета также скрывает
         # связанную с ним ручку QSplitter и лишает возможности раскрыть панель.
         if section == 0:
+            collapsed = self.body_splitter.is_section_collapsed(0)
+            logger.action(f"Servers panel {'collapsed' if collapsed else 'expanded'}")
             self.body_splitter.update()
 
     def _right_section_double_clicked(self, section: int) -> None:
         """Оставляет ручки вертикального splitter доступными."""
         # Панели остаются видимыми для Qt и скрываются только размером 0 px.
         if 0 <= section < self.right_splitter.count():
+            names = {0: "SQL Console", 1: "Panel", 2: "Results"}
+            name = names.get(section, f"Section {section}")
+            collapsed = self.right_splitter.is_section_collapsed(section)
+            logger.action(f"{name} panel {'collapsed' if collapsed else 'expanded'}")
             self.right_splitter.update()
 
     def _toggle_servers_panel(self, visible):
@@ -1070,12 +1104,21 @@ class MainWindow(QWidget):
 
         self.log.moveCursor(QTextCursor.End)
 
+        # Дублируем в файловый лог для изучения после закрытия приложения.
+        _LEVELS = {
+            "SUCCESS": logger.info,
+            "WARNING": logger.warning,
+            "ERROR": logger.error,
+        }
+        _LEVELS.get(level.upper(), logger.info)(message)
+
     # ----------------------------------------------------------
     # Scripts Library
     # ----------------------------------------------------------
 
     def _append_query(self, text):
         self.scripts_library.append_query(text)
+        logger.info(f"SQL: {text}")
 
     def _run_check_script(self, template: str):
         sql_builder.set_custom_template(template)
@@ -1114,7 +1157,15 @@ class MainWindow(QWidget):
             )
 
             if answer != QMessageBox.Yes:
+                logger.action("Write query denied by user")
                 return
+
+            logger.action("Write query confirmed by user")
+
+        logger.action(
+            f"SQL run: targets={len(targets)}, "
+            f"statements={len(split_statements(sql))}"
+        )
 
         self.table.reset_table()
         self.table.results_source = "sql"
@@ -1189,6 +1240,8 @@ class MainWindow(QWidget):
         self.query_worker.stop()
         self.lbl_sql_status.setText("Остановка...")
 
+        logger.action("SQL execution stopped by user")
+
         # KILL активного запроса в фоне, чтобы не блокировать GUI.
         threading.Thread(
             target=self.query_worker.kill_active,
@@ -1209,6 +1262,8 @@ class MainWindow(QWidget):
         self.lbl_sql_status.setText("Загрузка списка БД...")
         self.panel.set_busy(True)
         self.panel.set_stop_enabled(False)
+
+        logger.action(f"Databases refresh requested: {host}")
 
         self.query_worker.set_databases_request(host)
 
@@ -1268,6 +1323,8 @@ class MainWindow(QWidget):
         self.lbl_sql_status.setText("Экспорт всех результатов...")
         self._set_export_ui(True)
 
+        logger.action(f"Export started: {filename}")
+
         self.export_worker.set_export_request(targets, sql, filename)
 
         self.export_thread.start()
@@ -1282,6 +1339,8 @@ class MainWindow(QWidget):
             "SUCCESS",
             f"Exported {total_rows} row(s) to {filepath}",
         )
+
+        logger.action(f"Export done: {total_rows} row(s) → {filepath}")
 
     def _export_finished(self):
 
@@ -1310,6 +1369,8 @@ class MainWindow(QWidget):
             f"Экспорт остановлен ({done} из {total})"
         )
         self._set_export_ui(False)
+
+        logger.action(f"Export stopped ({done} of {total})")
 
     def _sql_finished(self):
 
@@ -1466,6 +1527,10 @@ class MainWindow(QWidget):
             f"Поиск «{mask}» на {len(servers)} сервере(ах)..."
         )
 
+        logger.action(
+            f"Search run: mask={mask!r}, servers={len(servers)}"
+        )
+
         self._search_busy(True)
 
         self.search_worker.set_request(mask, servers)
@@ -1482,6 +1547,8 @@ class MainWindow(QWidget):
         self.btn_search_stop.setEnabled(False)
 
         self._search_stopped = True
+
+        logger.action("Search stopped.")
 
         self.lbl_sql_status.setText("Остановка поиска...")
 
@@ -1509,6 +1576,10 @@ class MainWindow(QWidget):
             self.lbl_sql_status.setText(
                 f"Поиск завершён: найдено БД — {self._search_found} "
                 f"на {self._search_completed} сервере(ах)."
+            )
+            logger.action(
+                f"Search finished: found={self._search_found} "
+                f"servers={self._search_completed}"
             )
 
         self.progress.setValue(0)
@@ -1603,6 +1674,8 @@ class MainWindow(QWidget):
             f"{sql} @ {server}",
         )
 
+        logger.action(f"Table select: {server}.{database}.{table}")
+
     def _save_log(self):
 
         filename, _ = QFileDialog.getSaveFileName(
@@ -1633,6 +1706,8 @@ class MainWindow(QWidget):
             "SUCCESS",
             f"Log saved to {filename}",
         )
+
+        logger.action(f"Log saved to {filename}")
 
     def shutdown(self):
         """Останавливает все фоновые потоки (вызывается из App.closeEvent)."""
@@ -1666,6 +1741,9 @@ class MainWindow(QWidget):
                     thr.wait()
 
         mysql.close_all()
+
+        logger.session_end()
+        logger.cleanup()
 
     def event(self, e):
         if e.type() == QEvent.ApplicationPaletteChange:
@@ -1701,8 +1779,13 @@ class MainWindow(QWidget):
 
     def _on_theme_mode(self, mode: str):
         theme_styles.set_mode(mode)
+        logger.action(f"Theme mode set: {mode}")
 
     def _on_theme_applied(self):
+        logger.action(
+            f"Theme applied: {theme_styles.current_theme()} "
+            f"({theme_styles.mode()})"
+        )
         app = QApplication.instance()
         if app is not None:
             app.setPalette(theme_styles.build_palette())

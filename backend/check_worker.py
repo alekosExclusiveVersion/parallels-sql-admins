@@ -8,6 +8,7 @@ from concurrent.futures import (
 from common.mysql_client import mysql
 from common.stats import stats
 from common.sql_builder import sql_builder
+from common.logger import logger
 from PySide6.QtCore import QObject, Signal, Slot
 from common.config import config
 
@@ -106,6 +107,8 @@ class CheckWorker(QObject):
 
         except Exception as ex:
 
+            logger.exception(ex)
+
             messages.append(
                 f"{server}: {ex}"
             )
@@ -191,6 +194,8 @@ class CheckWorker(QObject):
 
                         except Exception as db_ex:
 
+                            logger.exception(db_ex)
+
                             rows.append(
                                 (
                                     server,
@@ -209,6 +214,7 @@ class CheckWorker(QObject):
             except Exception as conn_ex:
                 # Не удалось открыть даже одно соединение — помечаем
                 # все БД пачки ошибкой.
+                logger.exception(conn_ex)
                 for database in databases:
                     rows.append(
                         (

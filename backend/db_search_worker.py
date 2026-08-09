@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from PySide6.QtCore import QObject, Signal, Slot
 
 from common.config import config
+from common.logger import logger
 from common.mysql_client import mysql
 
 
@@ -46,6 +47,7 @@ class DatabaseSearchWorker(QObject):
             databases = mysql.search_databases(server, self._mask)
             return server, databases, None
         except Exception as ex:
+            logger.exception(ex)
             return server, [], str(ex)
 
     @Slot()

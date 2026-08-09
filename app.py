@@ -25,6 +25,8 @@ from PySide6.QtWidgets import QApplication
 from gui.application import App
 from gui.icons import app_icon
 from gui import styles as theme_styles
+from common.logger import logger
+from common.version import APP_VERSION
 
 
 def main() -> int:
@@ -37,6 +39,8 @@ def main() -> int:
     qt_app.setPalette(theme_styles.build_palette())
 
     qt_app.setWindowIcon(app_icon())
+
+    logger.session_start(f"Parallels SQL Admins v{APP_VERSION}")
 
     window = App()
 

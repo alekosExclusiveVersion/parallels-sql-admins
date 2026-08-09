@@ -30,6 +30,7 @@ from concurrent.futures import ThreadPoolExecutor
 from PySide6.QtCore import QObject, Signal, Slot
 
 from common.config import config
+from common.logger import logger
 from common.server_registry import client_for
 
 _logger = logging.getLogger(__name__)
@@ -85,6 +86,7 @@ class DbSizesWorker(QObject):
             try:
                 names = client_for(server).list_all_databases(server)
             except Exception as ex:
+                logger.exception(ex)
                 self.error.emit(server, "databases", str(ex))
                 continue
 
@@ -153,6 +155,7 @@ class DbSizesWorker(QObject):
                 self.databases.emit(server, sizes)
                 self.server_tables.emit(server, tables)
         except Exception as ex:
+            logger.exception(ex)
             if not self._stop:
                 self.error.emit(server, context, str(ex))
 
@@ -182,4 +185,5 @@ class DbSizesWorker(QObject):
             sizes = client_for(server).database_table_sizes(server, database)
             self.tables.emit(server, database, sizes)
         except Exception as ex:
+            logger.exception(ex)
             self.error.emit(server, database, str(ex))
