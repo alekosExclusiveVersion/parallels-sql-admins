@@ -40,6 +40,10 @@ class CollapsibleSplitter(QSplitter):
         handle = CollapsibleSplitterHandle(self.orientation(), self)
         handle._handle_index = self._next_handle_index
         self._next_handle_index += 1
+        handle.setToolTip(
+            "Перетащите — изменить размер · "
+            "Двойной клик — свернуть/развернуть"
+        )
         handle.doubleClicked.connect(
             lambda handle=handle: self._handle_double_clicked(handle)
         )

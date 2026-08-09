@@ -578,9 +578,22 @@ class MainWindow(QWidget):
 
         servers_top.addStretch()
 
+        self.btn_collapse_servers = QToolButton()
+        self.btn_collapse_servers.setObjectName("btn_icon")
+        self.btn_collapse_servers.setIcon(
+            icon("chevron_left", 16, "@icon_muted")
+        )
+        self.btn_collapse_servers.setIconSize(QSize(16, 16))
+        self.btn_collapse_servers.setToolTip("Свернуть панель серверов")
+        self.btn_collapse_servers.clicked.connect(
+            self._toggle_servers_button
+        )
+        servers_top.addWidget(self.btn_collapse_servers)
+
         server_layout.addLayout(servers_top)
 
         self.search = QLineEdit()
+        self.search.setObjectName("SearchField")
         self.search.setPlaceholderText("Поиск сервера, БД, таблицы…")
         self.search.setClearButtonEnabled(True)
         server_layout.addWidget(self.search)
@@ -656,6 +669,7 @@ class MainWindow(QWidget):
         filter_layout = QHBoxLayout()
 
         self.result_search = QLineEdit()
+        self.result_search.setObjectName("SearchField")
         self.result_search.setPlaceholderText(
             "Поиск по всем колонкам..."
         )
@@ -686,6 +700,21 @@ class MainWindow(QWidget):
         self.btn_export_all.clicked.connect(self._export_all_results)
 
         filter_layout.addWidget(self.btn_export_all)
+
+        self.btn_collapse_results = QToolButton()
+        self.btn_collapse_results.setObjectName("btn_icon")
+        self.btn_collapse_results.setIcon(
+            icon("expand_more", 16, "@icon_muted")
+        )
+        self.btn_collapse_results.setIconSize(QSize(16, 16))
+        self.btn_collapse_results.setToolTip(
+            "Свернуть панель результатов"
+        )
+        self.btn_collapse_results.clicked.connect(
+            self._toggle_results_button
+        )
+
+        filter_layout.addWidget(self.btn_collapse_results)
 
         table_layout.addLayout(filter_layout)
 
@@ -768,11 +797,11 @@ class MainWindow(QWidget):
         search_frame = QFrame()
         self.search_frame = search_frame
         search_frame.setObjectName("TabsBlock")
-        search_frame.setFixedHeight(90)
+        search_frame.setFixedHeight(68)
 
         search_layout = QVBoxLayout(search_frame)
-        search_layout.setContentsMargins(8, 8, 8, 8)
-        search_layout.setSpacing(6)
+        search_layout.setContentsMargins(6, 6, 6, 6)
+        search_layout.setSpacing(4)
 
         search_top = QHBoxLayout()
 
@@ -788,6 +817,18 @@ class MainWindow(QWidget):
 
         search_top.addStretch()
 
+        self.btn_collapse_search = QToolButton()
+        self.btn_collapse_search.setObjectName("btn_icon")
+        self.btn_collapse_search.setIcon(
+            icon("expand_less", 16, "@icon_muted")
+        )
+        self.btn_collapse_search.setIconSize(QSize(16, 16))
+        self.btn_collapse_search.setToolTip("Свернуть блок поиска БД")
+        self.btn_collapse_search.clicked.connect(
+            self._toggle_search_button
+        )
+        search_top.addWidget(self.btn_collapse_search)
+
         search_layout.addLayout(search_top)
 
         search_row = QHBoxLayout()
@@ -797,6 +838,7 @@ class MainWindow(QWidget):
         search_row.addWidget(self.lbl_search)
 
         self.ed_search_mask = QLineEdit()
+        self.ed_search_mask.setObjectName("SearchField")
         self.ed_search_mask.setClearButtonEnabled(True)
         search_row.addWidget(self.ed_search_mask, 1)
 
@@ -931,6 +973,10 @@ class MainWindow(QWidget):
             self._sql_clear
         )
 
+        self.panel.collapseRequested.connect(
+            self._toggle_console_button
+        )
+
         self.panel.serverChanged.connect(
             self._sql_server_changed
         )
@@ -1014,6 +1060,94 @@ class MainWindow(QWidget):
         else:
             sizes[2] = 0
             self.right_splitter.setSizes(sizes)
+
+    def _toggle_right_panel(self, index: int, visible: bool) -> None:
+        """Показывает или сворачивает произвольную секцию правого
+        сплиттера (0 — Поиск БД, 1 — SQL Консоль, 2 — Результаты)."""
+        splitter = self.right_splitter
+        sizes = splitter.sizes()
+        if visible:
+            if sizes[index] == 0:
+                restored = splitter._saved_sizes.get(index, 0)
+                if restored <= 0:
+                    restored = max(
+                        100,
+                        splitter.height() // max(2, splitter.count()),
+                    )
+                new_sizes = list(sizes)
+                new_sizes[index] = restored
+                splitter.setSizes(new_sizes)
+        else:
+            new_sizes = list(sizes)
+            new_sizes[index] = 0
+            splitter.setSizes(new_sizes)
+
+    def _set_panel_button(
+        self,
+        button,
+        collapsed: bool,
+        collapse_icon: str,
+        expand_icon: str,
+        collapse_tip: str,
+        expand_tip: str,
+    ) -> None:
+        """Обновляет иконку и подсказку кнопки-шеврона панели."""
+        button.setIcon(
+            icon(
+                expand_icon if collapsed else collapse_icon,
+                16,
+                "@icon_muted",
+            )
+        )
+        button.setToolTip(expand_tip if collapsed else collapse_tip)
+
+    def _toggle_servers_button(self) -> None:
+        collapsed = self.body_splitter.is_section_collapsed(0)
+        self._toggle_servers_panel(collapsed)
+        self._set_panel_button(
+            self.btn_collapse_servers,
+            not collapsed,
+            "chevron_left",
+            "chevron_right",
+            "Свернуть панель серверов",
+            "Развернуть панель серверов",
+        )
+
+    def _toggle_search_button(self) -> None:
+        collapsed = self.right_splitter.is_section_collapsed(0)
+        self._toggle_right_panel(0, collapsed)
+        self._set_panel_button(
+            self.btn_collapse_search,
+            not collapsed,
+            "expand_less",
+            "expand_more",
+            "Свернуть блок поиска БД",
+            "Развернуть блок поиска БД",
+        )
+
+    def _toggle_results_button(self) -> None:
+        collapsed = self.right_splitter.is_section_collapsed(2)
+        self._toggle_results_panel(collapsed)
+        self._set_panel_button(
+            self.btn_collapse_results,
+            not collapsed,
+            "expand_more",
+            "expand_less",
+            "Свернуть панель результатов",
+            "Развернуть панель результатов",
+        )
+
+    def _toggle_console_button(self) -> None:
+        collapsed = self.right_splitter.is_section_collapsed(1)
+        self._toggle_right_panel(1, collapsed)
+        self._set_panel_button(
+            self.panel.btn_collapse,
+            not collapsed,
+            "expand_less",
+            "expand_more",
+            "Свернуть SQL Консоль",
+            "Развернуть SQL Консоль",
+        )
 
     def _ensure_results_visible(self, *_args) -> None:
         if not self.tabs_frame.isVisible():

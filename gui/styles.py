@@ -433,14 +433,15 @@ QLineEdit#SearchField{
     background:{input_bg};
     border:1px solid {border};
     border-radius:6px;
-    padding:4px 8px;
+    padding:2px 6px;
     color:{text};
+    font-size:12px;
     selection-background-color:{accent};
     selection-color:#ffffff;
 }
 
 QLineEdit#SearchField:focus{
-    border-color:{input_focus};
+    border:1px solid {input_focus};
 }
 
 /* --- Status bar (full-bleed; тёмная в обеих темах) --- */
@@ -878,19 +879,11 @@ QSplitter::handle:horizontal{
     border-radius:1px;
 }
 
-QSplitter::handle:horizontal:hover{
-    background:{border_strong};
-}
-
 /* Горизонтальная ручка (разделяет верх/низ): тонкая линия сверху
    (QSS margin для handle:vertical не применяется, используем border) */
 QSplitter::handle:vertical{
     background:transparent;
     border-top:1px solid {divider};
-}
-
-QSplitter::handle:vertical:hover{
-    border-top-color:{border_strong};
 }
 
 /* --- Scrollbars --- */
