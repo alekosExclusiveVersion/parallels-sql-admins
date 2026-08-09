@@ -14,6 +14,8 @@ class App(QMainWindow):
         self.ui = MainWindow(self)
         self.setCentralWidget(self.ui)
 
+        self.ui.build_menu(self.menuBar())
+
     def closeEvent(self, event: QCloseEvent) -> None:
         """Останавливает фоновые потоки до закрытия окна.
 

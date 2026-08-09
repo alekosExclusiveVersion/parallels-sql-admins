@@ -1824,6 +1824,161 @@ class MainWindow(QWidget):
         self.btn_log_copy.setIcon(icon("content_copy"))
         self.btn_log_save.setIcon(icon("download"))
 
+    # ----------------------------------------------------------
+    # Application Menu
+    # ----------------------------------------------------------
+
+    def build_menu(self, menu_bar) -> None:
+        """Собирает меню приложения в переданную QMenuBar (App)."""
+        menu_file = menu_bar.addMenu("&Файл")
+
+        menu_file.addAction(
+            icon("add", 16, "@icon_accent"), "Добавить сервер…"
+        ).triggered.connect(self._add_server)
+
+        self._menu_edit = menu_file.addAction(
+            icon("edit", 16, "@icon_muted"), "Изменить сервер…"
+        )
+        self._menu_edit.triggered.connect(self._menu_edit_server)
+
+        self._menu_remove = menu_file.addAction(
+            icon("delete_outline", 16, "@icon_danger"), "Удалить сервер"
+        )
+        self._menu_remove.triggered.connect(self._menu_remove_server)
+
+        menu_file.addAction(
+            icon("refresh", 16, "@icon_accent"), "Обновить список серверов"
+        ).triggered.connect(self._refresh_servers)
+
+        menu_file.addSeparator()
+
+        menu_file.addAction(
+            icon("download"), "Экспорт всех результатов…"
+        ).triggered.connect(self._export_all_results)
+
+        menu_file.addAction(
+            icon("save"), "Сохранить журнал…"
+        ).triggered.connect(self._save_log)
+
+        menu_file.addSeparator()
+
+        act_quit = menu_file.addAction(icon("close"), "Выход")
+        act_quit.triggered.connect(self.window().close)
+        act_quit.setShortcut("Ctrl+Q")
+
+        # --- Проверка ---
+        menu_check = menu_bar.addMenu("&Проверка")
+        menu_check.addAction(
+            icon("play_arrow"), "Запустить проверку"
+        ).triggered.connect(self._run_check)
+
+        # --- Поиск ---
+        menu_search = menu_bar.addMenu("&Поиск")
+        menu_search.addAction(
+            icon("search"), "Найти БД"
+        ).triggered.connect(self._search_run)
+        menu_search.addAction(
+            icon("stop"), "Остановить поиск"
+        ).triggered.connect(self._search_stop)
+
+        # --- Консоль ---
+        menu_console = menu_bar.addMenu("&Консоль")
+        menu_console.addAction(
+            icon("play_arrow"), "Выполнить запрос"
+        ).triggered.connect(self._menu_run_sql)
+        menu_console.addAction(
+            icon("stop"), "Остановить выполнение"
+        ).triggered.connect(self._sql_stop)
+        menu_console.addAction(
+            icon("refresh"), "Обновить список БД"
+        ).triggered.connect(self._sql_refresh_databases)
+        menu_console.addSeparator()
+        menu_console.addAction(
+            icon("close"), "Очистить результаты"
+        ).triggered.connect(self._sql_clear)
+        menu_console.addAction(
+            icon("delete_outline"), "Очистить редактор"
+        ).triggered.connect(self.panel.clear_editor)
+
+        # --- Вид ---
+        menu_view = menu_bar.addMenu("&Вид")
+        menu_theme = menu_view.addMenu("Тема")
+        for mode in ("auto", "light", "dark"):
+            menu_theme.addAction(self._mode_actions[mode])
+        menu_view.addSeparator()
+        menu_view.addAction(
+            "Свернуть/развернуть панель серверов"
+        ).triggered.connect(
+            lambda: self._toggle_servers_panel(
+                self.body_splitter.is_section_collapsed(0)
+            )
+        )
+        menu_view.addAction(
+            "Свернуть/развернуть результаты"
+        ).triggered.connect(
+            lambda: self._toggle_results_panel(
+                self.right_splitter.is_section_collapsed(2)
+            )
+        )
+
+        # --- Журнал ---
+        menu_log = menu_bar.addMenu("&Журнал")
+        menu_log.addAction(
+            icon("delete_outline"), "Очистить журнал"
+        ).triggered.connect(
+            lambda: (self.log.clear(), logger.action("Log cleared"))
+        )
+        menu_log.addAction(
+            icon("content_copy"), "Копировать журнал"
+        ).triggered.connect(
+            lambda: (
+                self.log.copy(),
+                logger.action("Log copied to clipboard"),
+            )
+        )
+        menu_log.addAction(
+            icon("save"), "Сохранить журнал…"
+        ).triggered.connect(self._save_log)
+
+        # --- Справка ---
+        menu_help = menu_bar.addMenu("&Справка")
+        menu_help.addAction(
+            icon("info_outline"), "О программе…"
+        ).triggered.connect(self._menu_about)
+
+        self.servers_tree.selectionChangedNotify.connect(
+            self._menu_update_server_actions
+        )
+        self._menu_update_server_actions()
+
+    def _menu_selected_server(self) -> str:
+        servers = self.servers_tree.selected_servers()
+        return servers[0] if servers else ""
+
+    def _menu_edit_server(self):
+        self._edit_server(self._menu_selected_server())
+
+    def _menu_remove_server(self):
+        self._remove_server(self._menu_selected_server())
+
+    def _menu_run_sql(self):
+        self._run_sql(self.panel.script_text())
+
+    def _menu_update_server_actions(self):
+        has = bool(self.servers_tree.selected_servers())
+        self._menu_edit.setEnabled(has)
+        self._menu_remove.setEnabled(has)
+
+    def _menu_about(self):
+        QMessageBox.about(
+            self,
+            "О программе",
+            f"<b>Parallels SQL Admin</b><br>"
+            f"Версия {APP_VERSION}<br><br>"
+            "Администрирование MySQL и MSSQL серверов: проверка настроек, "
+            "поиск БД, SQL-консоль, экспорт результатов.",
+        )
+
     def closeEvent(self, event):
         self.shutdown()
         event.accept()
