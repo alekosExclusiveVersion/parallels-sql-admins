@@ -1919,33 +1919,43 @@ class MainWindow(QWidget):
         """Собирает меню приложения в переданную QMenuBar (App)."""
         menu_file = menu_bar.addMenu("&Файл")
 
-        menu_file.addAction(
+        act_add_server = menu_file.addAction(
             icon("add", 16, "@icon_accent"), "Добавить сервер…"
-        ).triggered.connect(self._add_server)
+        )
+        act_add_server.triggered.connect(self._add_server)
+        act_add_server.setShortcut("Ctrl+N")
 
         self._menu_edit = menu_file.addAction(
             icon("edit", 16, "@icon_muted"), "Изменить сервер…"
         )
         self._menu_edit.triggered.connect(self._menu_edit_server)
+        self._menu_edit.setShortcut("Ctrl+E")
 
         self._menu_remove = menu_file.addAction(
             icon("delete_outline", 16, "@icon_danger"), "Удалить сервер"
         )
         self._menu_remove.triggered.connect(self._menu_remove_server)
+        self._menu_remove.setShortcut("Ctrl+Del")
 
-        menu_file.addAction(
+        act_refresh_servers = menu_file.addAction(
             icon("refresh", 16, "@icon_accent"), "Обновить список серверов"
-        ).triggered.connect(self._refresh_servers)
+        )
+        act_refresh_servers.triggered.connect(self._refresh_servers)
+        act_refresh_servers.setShortcut("Ctrl+R")
 
         menu_file.addSeparator()
 
-        menu_file.addAction(
+        act_export = menu_file.addAction(
             icon("download"), "Экспорт всех результатов…"
-        ).triggered.connect(self._export_all_results)
+        )
+        act_export.triggered.connect(self._export_all_results)
+        act_export.setShortcut("Ctrl+Shift+E")
 
-        menu_file.addAction(
+        act_save_log = menu_file.addAction(
             icon("save"), "Сохранить журнал…"
-        ).triggered.connect(self._save_log)
+        )
+        act_save_log.triggered.connect(self._save_log)
+        act_save_log.setShortcut("Ctrl+S")
 
         menu_file.addSeparator()
 
@@ -1955,37 +1965,51 @@ class MainWindow(QWidget):
 
         # --- Проверка ---
         menu_check = menu_bar.addMenu("&Проверка")
-        menu_check.addAction(
+        act_run_check = menu_check.addAction(
             icon("play_arrow"), "Запустить проверку"
-        ).triggered.connect(self._run_check)
+        )
+        act_run_check.triggered.connect(self._run_check)
+        act_run_check.setShortcut("F5")
 
         # --- Поиск ---
         menu_search = menu_bar.addMenu("&Поиск")
-        menu_search.addAction(
+        act_search = menu_search.addAction(
             icon("search"), "Найти БД"
-        ).triggered.connect(self._search_run)
-        menu_search.addAction(
+        )
+        act_search.triggered.connect(self._search_run)
+        act_search.setShortcut("Ctrl+F")
+        act_search_stop = menu_search.addAction(
             icon("stop"), "Остановить поиск"
-        ).triggered.connect(self._search_stop)
+        )
+        act_search_stop.triggered.connect(self._search_stop)
+        act_search_stop.setShortcut("Ctrl+Shift+F")
 
         # --- Консоль ---
         menu_console = menu_bar.addMenu("&Консоль")
         menu_console.addAction(
             icon("play_arrow"), "Выполнить запрос"
         ).triggered.connect(self._menu_run_sql)
-        menu_console.addAction(
+        act_sql_stop = menu_console.addAction(
             icon("stop"), "Остановить выполнение"
-        ).triggered.connect(self._sql_stop)
-        menu_console.addAction(
+        )
+        act_sql_stop.triggered.connect(self._sql_stop)
+        act_sql_stop.setShortcut("Esc")
+        act_sql_refresh = menu_console.addAction(
             icon("refresh"), "Обновить список БД"
-        ).triggered.connect(self._sql_refresh_databases)
+        )
+        act_sql_refresh.triggered.connect(self._sql_refresh_databases)
+        act_sql_refresh.setShortcut("Ctrl+Shift+R")
         menu_console.addSeparator()
-        menu_console.addAction(
+        act_sql_clear = menu_console.addAction(
             icon("close"), "Очистить результаты"
-        ).triggered.connect(self._sql_clear)
-        menu_console.addAction(
+        )
+        act_sql_clear.triggered.connect(self._sql_clear)
+        act_sql_clear.setShortcut("Ctrl+Shift+Backspace")
+        act_sql_clear_editor = menu_console.addAction(
             icon("delete_outline"), "Очистить редактор"
-        ).triggered.connect(self.panel.clear_editor)
+        )
+        act_sql_clear_editor.triggered.connect(self.panel.clear_editor)
+        act_sql_clear_editor.setShortcut("Ctrl+L")
 
         # --- Скрипты ---
         menu_scripts = menu_bar.addMenu("&Скрипты")
@@ -1996,12 +2020,16 @@ class MainWindow(QWidget):
             "Запустить проверку"
         )
         menu_scripts.addSeparator()
-        menu_scripts.addAction(
+        act_scripts_manager = menu_scripts.addAction(
             icon("edit"), "Управление скриптами…"
-        ).triggered.connect(self._menu_scripts_manager)
-        menu_scripts.addAction(
+        )
+        act_scripts_manager.triggered.connect(self._menu_scripts_manager)
+        act_scripts_manager.setShortcut("Ctrl+Shift+S")
+        act_clear_query_log = menu_scripts.addAction(
             icon("delete_outline"), "Очистить журнал запросов"
-        ).triggered.connect(self._clear_query_log)
+        )
+        act_clear_query_log.triggered.connect(self._clear_query_log)
+        act_clear_query_log.setShortcut("Ctrl+Shift+L")
         self._rebuild_scripts_menu()
 
         # --- Вид ---
@@ -2010,45 +2038,55 @@ class MainWindow(QWidget):
         for mode in ("auto", "light", "dark"):
             menu_theme.addAction(self._mode_actions[mode])
         menu_view.addSeparator()
-        menu_view.addAction(
+        act_toggle_servers = menu_view.addAction(
             "Свернуть/развернуть панель серверов"
-        ).triggered.connect(
+        )
+        act_toggle_servers.triggered.connect(
             lambda: self._toggle_servers_panel(
                 self.body_splitter.is_section_collapsed(0)
             )
         )
-        menu_view.addAction(
+        act_toggle_servers.setShortcut("Ctrl+B")
+        act_toggle_results = menu_view.addAction(
             "Свернуть/развернуть результаты"
-        ).triggered.connect(
+        )
+        act_toggle_results.triggered.connect(
             lambda: self._toggle_results_panel(
                 self.right_splitter.is_section_collapsed(2)
             )
         )
+        act_toggle_results.setShortcut("Ctrl+Shift+B")
 
         # --- Журнал ---
         menu_log = menu_bar.addMenu("&Журнал")
-        menu_log.addAction(
+        act_log_clear = menu_log.addAction(
             icon("delete_outline"), "Очистить журнал"
-        ).triggered.connect(
+        )
+        act_log_clear.triggered.connect(
             lambda: (self.log.clear(), logger.action("Log cleared"))
         )
-        menu_log.addAction(
+        act_log_clear.setShortcut("Ctrl+Shift+X")
+        act_log_copy = menu_log.addAction(
             icon("content_copy"), "Копировать журнал"
-        ).triggered.connect(
+        )
+        act_log_copy.triggered.connect(
             lambda: (
                 self.log.copy(),
                 logger.action("Log copied to clipboard"),
             )
         )
+        act_log_copy.setShortcut("Ctrl+Shift+C")
         menu_log.addAction(
             icon("save"), "Сохранить журнал…"
         ).triggered.connect(self._save_log)
 
         # --- Справка ---
         menu_help = menu_bar.addMenu("&Справка")
-        menu_help.addAction(
+        act_about = menu_help.addAction(
             icon("info_outline"), "О программе…"
-        ).triggered.connect(self._menu_about)
+        )
+        act_about.triggered.connect(self._menu_about)
+        act_about.setShortcut("F1")
 
         self.servers_tree.selectionChangedNotify.connect(
             self._menu_update_server_actions
