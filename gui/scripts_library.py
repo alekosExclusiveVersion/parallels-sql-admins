@@ -46,15 +46,72 @@ SCRIPTS_FILE = DATA_DIR / "scripts.json"
 DEFAULT_SCRIPT_NAME = "Проверка cfg_settings"
 
 
+class ScriptStore:
+    """Загрузка и сохранение библиотеки скриптов (scripts.json).
+
+    Используется как самим ScriptsLibrary, так и меню приложения и
+    вкладками скриптов (не зависят от виджета-библиотеки).
+    """
+
+    def __init__(self) -> None:
+        self._scripts: list[dict] = []
+        self.load_scripts()
+
+    def load_scripts(self) -> None:
+        self._scripts = []
+        if SCRIPTS_FILE.exists():
+            try:
+                data = json.loads(SCRIPTS_FILE.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    self._scripts = [
+                        s for s in data
+                        if isinstance(s, dict) and s.get("name")
+                    ]
+            except (OSError, json.JSONDecodeError):
+                self._scripts = []
+        if not self._scripts:
+            self._scripts = [
+                {"name": DEFAULT_SCRIPT_NAME, "body": DEFAULT_SCAN_TEMPLATE}
+            ]
+            self.save_scripts()
+
+    def save_scripts(self) -> None:
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = SCRIPTS_FILE.with_suffix(".json.tmp")
+            tmp.write_text(
+                json.dumps(self._scripts, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            os.replace(tmp, SCRIPTS_FILE)
+        except OSError:
+            pass
+
+    def script_items(self) -> list[dict]:
+        """Копия списка скриптов {name, body} для меню и вкладок."""
+        return [dict(s) for s in self._scripts]
+
+    def update_script(self, name: str, body: str) -> bool:
+        """Перезаписывает тело скрипта по имени. True — скрипт найден."""
+        for script in self._scripts:
+            if script["name"] == name:
+                script["body"] = body
+                self.save_scripts()
+                return True
+        return False
+
+
 class ScriptsLibrary(QWidget):
     """Список скриптов слева, редактор справа, запуск текущего скрипта."""
 
     runRequested = Signal(str)      # запустить check со скриптом (body)
     clearLogRequested = Signal()
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, show_query_log: bool = True) -> None:
         super().__init__(parent)
-        self._scripts: list[dict] = []
+        self._show_query_log = show_query_log
+        self.store = ScriptStore()
+        self._scripts = self.store._scripts
         self._current = -1
         self._dirty = False
 
@@ -197,29 +254,30 @@ class ScriptsLibrary(QWidget):
         layout.addWidget(body, 1)
 
         # --- Журнал запросов ---
-        log_header = QHBoxLayout()
+        if self._show_query_log:
+            log_header = QHBoxLayout()
 
-        self.lbl_log_title = QLabel("Журнал запросов")
-        self.lbl_log_title.setObjectName("SectionTitle")
-        log_header.addWidget(self.lbl_log_title)
+            self.lbl_log_title = QLabel("Журнал запросов")
+            self.lbl_log_title.setObjectName("SectionTitle")
+            log_header.addWidget(self.lbl_log_title)
 
-        log_header.addStretch()
+            log_header.addStretch()
 
-        self.btn_log_clear = QToolButton()
-        self.btn_log_clear.setObjectName("btn_icon")
-        self.btn_log_clear.setIcon(icon("delete_outline"))
-        self.btn_log_clear.setIconSize(QSize(16, 16))
-        self.btn_log_clear.setToolTip("Очистить журнал запросов")
-        self.btn_log_clear.clicked.connect(self.clearLogRequested)
-        log_header.addWidget(self.btn_log_clear)
+            self.btn_log_clear = QToolButton()
+            self.btn_log_clear.setObjectName("btn_icon")
+            self.btn_log_clear.setIcon(icon("delete_outline"))
+            self.btn_log_clear.setIconSize(QSize(16, 16))
+            self.btn_log_clear.setToolTip("Очистить журнал запросов")
+            self.btn_log_clear.clicked.connect(self.clearLogRequested)
+            log_header.addWidget(self.btn_log_clear)
 
-        layout.addLayout(log_header)
+            layout.addLayout(log_header)
 
-        self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setMaximumBlockCount(2000)
-        self.log.setFixedHeight(96)
-        layout.addWidget(self.log)
+            self.log = QPlainTextEdit()
+            self.log.setReadOnly(True)
+            self.log.setMaximumBlockCount(2000)
+            self.log.setFixedHeight(96)
+            layout.addWidget(self.log)
 
         self.save_shortcut = QShortcut(
             QKeySequence(Qt.CTRL | Qt.Key_S), self
@@ -236,35 +294,18 @@ class ScriptsLibrary(QWidget):
     # ----------------------------------------------------------
 
     def load_scripts(self) -> None:
-        self._scripts = []
-        if SCRIPTS_FILE.exists():
-            try:
-                data = json.loads(SCRIPTS_FILE.read_text(encoding="utf-8"))
-                if isinstance(data, list):
-                    self._scripts = [
-                        s for s in data
-                        if isinstance(s, dict) and s.get("name")
-                    ]
-            except (OSError, json.JSONDecodeError):
-                self._scripts = []
-        if not self._scripts:
-            self._scripts = [
-                {"name": DEFAULT_SCRIPT_NAME, "body": DEFAULT_SCAN_TEMPLATE}
-            ]
-            self.save_scripts()
+        self.store.load_scripts()
+        self._scripts = self.store._scripts
         self._rebuild_list()
 
     def save_scripts(self) -> None:
-        try:
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            tmp = SCRIPTS_FILE.with_suffix(".json.tmp")
-            tmp.write_text(
-                json.dumps(self._scripts, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            os.replace(tmp, SCRIPTS_FILE)
-        except OSError:
-            pass
+        self.store.save_scripts()
+
+    def script_items(self) -> list[dict]:
+        return self.store.script_items()
+
+    def update_script(self, name: str, body: str) -> bool:
+        return self.store.update_script(name, body)
 
     def current_body(self) -> str:
         if 0 <= self._current < len(self._scripts):
@@ -279,11 +320,14 @@ class ScriptsLibrary(QWidget):
         self.btn_add.setIcon(icon("add", 16, "@icon_accent"))
         self.btn_duplicate.setIcon(icon("content_copy", 16, "@icon_muted"))
         self.btn_delete.setIcon(icon("delete_outline", 16, "@icon_danger"))
-        self.btn_log_clear.setIcon(icon("delete_outline"))
+        if self._show_query_log:
+            self.btn_log_clear.setIcon(icon("delete_outline"))
         self.btn_save.setIcon(icon("save", 16, "@icon_fg"))
         self.btn_run.setIcon(icon("play_arrow", 16, "#ffffff"))
 
     def append_query(self, text: str) -> None:
+        if not self._show_query_log:
+            return
         from datetime import datetime
         stamp = datetime.now().strftime("%H:%M:%S")
         self.log.appendPlainText(f"[{stamp}] {text}")

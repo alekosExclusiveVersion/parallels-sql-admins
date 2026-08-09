@@ -426,6 +426,11 @@ class SqlConsolePanel(QWidget):
     def script_text(self) -> str:
         return self.editor.toPlainText()
 
+    def insert_script(self, text: str) -> None:
+        """Заменяет содержимое редактора текстом скрипта."""
+        self.editor.setPlainText(text)
+        self.editor.setFocus()
+
     # ----------------------------------------------------------
     # Запуск
     # ----------------------------------------------------------

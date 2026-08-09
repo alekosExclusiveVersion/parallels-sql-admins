@@ -50,7 +50,9 @@ from gui.worker_thread import WorkerHost
 from gui.servers_tree import ServersTree
 from gui.result_table import ResultTable
 from gui.sql_console import SqlConsolePanel
-from gui.scripts_library import ScriptsLibrary
+from gui.scripts_library import ScriptStore
+from gui.script_tab import ScriptTab
+from gui.scripts_manager_dialog import ScriptsManagerDialog
 from gui.server_dialog import ServerDialog
 
 
@@ -443,7 +445,7 @@ class MainWindow(QWidget):
 
     def _check_started(self):
 
-        self.scripts_library.set_running(True)
+        self._set_scripts_running(True)
 
         self.lbl_status_value.setText("Проверка...")
 
@@ -457,7 +459,7 @@ class MainWindow(QWidget):
 
     def _check_finished(self):
 
-        self.scripts_library.set_running(False)
+        self._set_scripts_running(False)
 
         self.table.setSortingEnabled(True)
 
@@ -765,11 +767,36 @@ class MainWindow(QWidget):
 
         log_layout.addWidget(self.log)
 
+        # --- Журнал запросов ---
+        query_log_header = QHBoxLayout()
+
+        self.lbl_query_log_title = QLabel("Журнал запросов")
+        self.lbl_query_log_title.setObjectName("SectionTitle")
+        query_log_header.addWidget(self.lbl_query_log_title)
+
+        query_log_header.addStretch()
+
+        self.btn_query_log_clear = QToolButton()
+        self.btn_query_log_clear.setObjectName("btn_icon")
+        self.btn_query_log_clear.setIcon(icon("delete_outline"))
+        self.btn_query_log_clear.setIconSize(QSize(16, 16))
+        self.btn_query_log_clear.setToolTip("Очистить журнал запросов")
+        self.btn_query_log_clear.clicked.connect(self._clear_query_log)
+        query_log_header.addWidget(self.btn_query_log_clear)
+
+        log_layout.addLayout(query_log_header)
+
+        self.query_log = QTextEdit()
+        self.query_log.setReadOnly(True)
+        self.query_log.setFixedHeight(96)
+        log_layout.addWidget(self.query_log)
+
         # ----------------------------------------------------------
         # Scripts Library UI
         # ----------------------------------------------------------
 
-        self.scripts_library = ScriptsLibrary()
+        self.scripts_store = ScriptStore()
+        self._script_tabs: list[ScriptTab] = []
 
         # ----------------------------------------------------------
         # SQL Console Panel UI
@@ -847,7 +874,8 @@ class MainWindow(QWidget):
         self.tabs = QTabWidget()
         self.tabs.addTab(table_frame, "Результаты")
         self.tabs.addTab(log_frame, "Журнал")
-        self.tabs.addTab(self.scripts_library, "Скрипты")
+        self.tabs.setTabsClosable(True)
+        self.tabs.tabCloseRequested.connect(self._tab_close_requested)
 
         self.tabs_frame = QFrame()
         self.tabs_frame.setObjectName("TabsBlock")
@@ -968,14 +996,6 @@ class MainWindow(QWidget):
 
         self.panel.scopeChanged.connect(
             self._sql_scope_changed
-        )
-
-        self.scripts_library.runRequested.connect(
-            self._run_check_script
-        )
-
-        self.scripts_library.clearLogRequested.connect(
-            self.scripts_library.log.clear
         )
 
         self.btn_search.clicked.connect(
@@ -1117,12 +1137,75 @@ class MainWindow(QWidget):
     # ----------------------------------------------------------
 
     def _append_query(self, text):
-        self.scripts_library.append_query(text)
+        stamp = datetime.now().strftime("%H:%M:%S")
+        self.query_log.append(f"[{stamp}] {text}")
         logger.info(f"SQL: {text}")
 
     def _run_check_script(self, template: str):
         sql_builder.set_custom_template(template)
         self._run_check()
+
+    def _set_scripts_running(self, running: bool) -> None:
+        for tab in self._script_tabs:
+            tab.set_running(running)
+
+    def _open_script_tab(self, name: str, body: str) -> None:
+        for tab in self._script_tabs:
+            if tab.script_name() == name:
+                self.tabs.setCurrentWidget(tab)
+                return
+        tab = ScriptTab(name, body)
+        tab.insertToConsoleRequested.connect(self._script_insert_to_console)
+        tab.runRequested.connect(self._script_run_requested)
+        index = self.tabs.addTab(tab, f"Скрипт: {name}")
+        self._script_tabs.append(tab)
+        self.tabs.setCurrentIndex(index)
+
+    def _script_insert_to_console(self, text: str) -> None:
+        self.panel.insert_script(text)
+        logger.action("Script inserted into console")
+
+    def _script_run_requested(self, text: str) -> None:
+        self._run_check_script(text)
+
+    def _tab_close_requested(self, index: int) -> None:
+        if index < 2:  # «Результаты» и «Журнал» — постоянные вкладки
+            return
+        tab = self.tabs.widget(index)
+        if not isinstance(tab, ScriptTab):
+            return
+        if not self._confirm_script_tab_close(tab):
+            return
+        self.tabs.removeTab(index)
+        if tab in self._script_tabs:
+            self._script_tabs.remove(tab)
+
+    def _confirm_script_tab_close(self, tab) -> bool:
+        """True — вкладку можно закрыть (с сохранением или без)."""
+        if not tab.is_dirty():
+            return True
+        answer = QMessageBox.question(
+            self,
+            "Несохранённые изменения",
+            f"Сохранить изменения скрипта «{tab.script_name()}»?",
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+            QMessageBox.Save,
+        )
+        if answer == QMessageBox.Cancel:
+            return False
+        if answer == QMessageBox.Save:
+            saved = self.scripts_store.update_script(
+                tab.script_name(), tab.current_text()
+            )
+            if saved:
+                logger.action(
+                    f"Script updated: {tab.script_name()}"
+                )
+        return True
+
+    def _clear_query_log(self):
+        self.query_log.clear()
+        logger.action("Query log cleared")
 
     # ----------------------------------------------------------
     # SQL Console
@@ -1793,7 +1876,6 @@ class MainWindow(QWidget):
         set_icon_theme(theme_styles.theme_colors())
         self._refresh_icons()
         self.servers_tree.retheme_icons()
-        self.scripts_library.retheme_icons()
         self.panel.retheme()
         self._sync_theme_ui()
         theme_styles.apply_window_appearance(self.window())
@@ -1900,6 +1982,23 @@ class MainWindow(QWidget):
             icon("delete_outline"), "Очистить редактор"
         ).triggered.connect(self.panel.clear_editor)
 
+        # --- Скрипты ---
+        menu_scripts = menu_bar.addMenu("&Скрипты")
+        self._menu_scripts_insert = menu_scripts.addMenu(
+            "Вставить в консоль"
+        )
+        self._menu_scripts_run = menu_scripts.addMenu(
+            "Запустить проверку"
+        )
+        menu_scripts.addSeparator()
+        menu_scripts.addAction(
+            icon("edit"), "Управление скриптами…"
+        ).triggered.connect(self._menu_scripts_manager)
+        menu_scripts.addAction(
+            icon("delete_outline"), "Очистить журнал запросов"
+        ).triggered.connect(self._clear_query_log)
+        self._rebuild_scripts_menu()
+
         # --- Вид ---
         menu_view = menu_bar.addMenu("&Вид")
         menu_theme = menu_view.addMenu("Тема")
@@ -1963,6 +2062,25 @@ class MainWindow(QWidget):
 
     def _menu_run_sql(self):
         self._run_sql(self.panel.script_text())
+
+    def _rebuild_scripts_menu(self) -> None:
+        for menu in (self._menu_scripts_insert, self._menu_scripts_run):
+            menu.clear()
+        for item in self.scripts_store.script_items():
+            name = item["name"]
+            body = item["body"]
+            self._menu_scripts_insert.addAction(name).triggered.connect(
+                lambda checked=False, n=name, b=body: self._open_script_tab(n, b)
+            )
+            self._menu_scripts_run.addAction(name).triggered.connect(
+                lambda checked=False, n=name, b=body: self._run_check_script(b)
+            )
+
+    def _menu_scripts_manager(self):
+        dialog = ScriptsManagerDialog(self)
+        dialog.exec()
+        self.scripts_store.load_scripts()
+        self._rebuild_scripts_menu()
 
     def _menu_update_server_actions(self):
         has = bool(self.servers_tree.selected_servers())
