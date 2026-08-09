@@ -819,10 +819,10 @@ class MainWindow(QWidget):
 
         search_layout.addLayout(search_row)
 
-        tabs = QTabWidget()
-        tabs.addTab(table_frame, "Результаты")
-        tabs.addTab(log_frame, "Журнал")
-        tabs.addTab(self.scripts_library, "Скрипты")
+        self.tabs = QTabWidget()
+        self.tabs.addTab(table_frame, "Результаты")
+        self.tabs.addTab(log_frame, "Журнал")
+        self.tabs.addTab(self.scripts_library, "Скрипты")
 
         self.tabs_frame = QFrame()
         self.tabs_frame.setObjectName("TabsBlock")
@@ -830,7 +830,7 @@ class MainWindow(QWidget):
         self.tabs_frame_layout.setContentsMargins(0, 0, 0, 0)
         self.tabs_frame_layout.setSpacing(0)
 
-        self.tabs_frame_layout.addWidget(tabs)
+        self.tabs_frame_layout.addWidget(self.tabs)
 
         self.right_splitter = CollapsibleSplitter(Qt.Vertical)
         self.right_splitter.setOpaqueResize(True)
@@ -1018,6 +1018,8 @@ class MainWindow(QWidget):
     def _ensure_results_visible(self, *_args) -> None:
         if not self.tabs_frame.isVisible():
             self._toggle_results_panel(True)
+        if self.tabs.currentIndex() != 0:
+            self.tabs.setCurrentIndex(0)
 
     def _apply_result_to_console(self, server: str, database: str) -> None:
         self.panel.set_target(server, database)
