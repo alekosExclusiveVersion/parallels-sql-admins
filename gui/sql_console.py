@@ -165,13 +165,9 @@ class SqlConsolePanel(QWidget):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(6)
 
-        # --- Тулбар: заголовок, поиск БД, служебные действия ---
+        # --- Тулбар: поиск БД, служебные действия ---
         toolbar = QHBoxLayout()
         toolbar.setSpacing(6)
-
-        self.lbl_title = QLabel("SQL Консоль")
-        self.lbl_title.setObjectName("SectionTitle")
-        toolbar.addWidget(self.lbl_title)
 
         self.ed_search_mask = QLineEdit()
         self.ed_search_mask.setObjectName("SearchField")

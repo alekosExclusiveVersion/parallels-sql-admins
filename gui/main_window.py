@@ -816,22 +816,30 @@ class MainWindow(QWidget):
         sql_console_frame = QFrame()
         self.sql_console_frame = sql_console_frame
 
-        self.panel = SqlConsolePanel(sql_console_frame)
+        # Единый интерфейс: SQL-консоль и открытые скрипты живут в одной
+        # вкладке-блоке (скрипты больше не попадают в «Результаты/Журнал»).
+        self.console_tabs = QTabWidget()
+        self.console_tabs.setDocumentMode(True)
+        self.console_tabs.setTabsClosable(True)
+        self.console_tabs.tabCloseRequested.connect(
+            self._console_tab_close_requested
+        )
+
+        self.panel = SqlConsolePanel()
+
+        self.console_tabs.addTab(self.panel, "SQL Консоль")
+        self.console_tabs.tabBar().setTabButton(
+            0, QTabBar.RightSide, None
+        )
 
         sql_console_layout = QVBoxLayout(sql_console_frame)
         sql_console_layout.setContentsMargins(0, 0, 0, 0)
         sql_console_layout.setSpacing(0)
-        sql_console_layout.addWidget(self.panel)
+        sql_console_layout.addWidget(self.console_tabs)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(table_frame, "Результаты")
         self.tabs.addTab(log_frame, "Журнал")
-        self.tabs.setTabsClosable(True)
-        self.tabs.tabCloseRequested.connect(self._tab_close_requested)
-
-        bar = self.tabs.tabBar()
-        bar.setTabButton(0, QTabBar.RightSide, None)
-        bar.setTabButton(1, QTabBar.RightSide, None)
 
         self.tabs_frame = QFrame()
         self.tabs_frame.setObjectName("TabsBlock")
@@ -1103,31 +1111,32 @@ class MainWindow(QWidget):
     def _open_script_tab(self, name: str, body: str) -> None:
         for tab in self._script_tabs:
             if tab.script_name() == name:
-                self.tabs.setCurrentWidget(tab)
+                self.console_tabs.setCurrentWidget(tab)
                 return
         tab = ScriptTab(name, body)
         tab.insertToConsoleRequested.connect(self._script_insert_to_console)
         tab.runRequested.connect(self._script_run_requested)
-        index = self.tabs.addTab(tab, f"Скрипт: {name}")
+        index = self.console_tabs.addTab(tab, f"Скрипт: {name}")
         self._script_tabs.append(tab)
-        self.tabs.setCurrentIndex(index)
+        self.console_tabs.setCurrentIndex(index)
 
     def _script_insert_to_console(self, text: str) -> None:
         self.panel.insert_script(text)
+        self.console_tabs.setCurrentWidget(self.panel)
         logger.action("Script inserted into console")
 
     def _script_run_requested(self, text: str) -> None:
         self._run_check_script(text)
 
-    def _tab_close_requested(self, index: int) -> None:
-        if index < 2:  # «Результаты» и «Журнал» — постоянные вкладки
+    def _console_tab_close_requested(self, index: int) -> None:
+        if index == 0:  # «SQL Консоль» — постоянная вкладка
             return
-        tab = self.tabs.widget(index)
+        tab = self.console_tabs.widget(index)
         if not isinstance(tab, ScriptTab):
             return
         if not self._confirm_script_tab_close(tab):
             return
-        self.tabs.removeTab(index)
+        self.console_tabs.removeTab(index)
         if tab in self._script_tabs:
             self._script_tabs.remove(tab)
 
