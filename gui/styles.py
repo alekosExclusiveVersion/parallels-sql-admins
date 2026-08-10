@@ -626,6 +626,28 @@ QToolButton#btn_icon:disabled{
     color:{border_strong};
 }
 
+QToolButton#btn_icon_danger{
+    border:none;
+    border-radius:6px;
+    background:transparent;
+    padding:4px 6px;
+    color:{icon_danger};
+}
+
+QToolButton#btn_icon_danger:hover{
+    background:{danger_soft};
+    color:{danger};
+}
+
+QToolButton#btn_icon_danger:pressed{
+    background:{danger_soft_active};
+}
+
+QToolButton#btn_icon_danger:disabled{
+    background:transparent;
+    color:{border_strong};
+}
+
 /* --- Buttons --- */
 QPushButton{
     min-height:28px;

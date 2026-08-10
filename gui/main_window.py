@@ -692,6 +692,7 @@ class MainWindow(QWidget):
         )
         self.result_search.setClearButtonEnabled(True)
         self.result_search.setFixedHeight(26)
+        self.result_search.setMaximumWidth(420)
         self.result_search.addAction(
             icon("search", 14, "@icon_muted"), QLineEdit.LeadingPosition
         )
@@ -822,61 +823,6 @@ class MainWindow(QWidget):
         sql_console_layout.setSpacing(0)
         sql_console_layout.addWidget(self.panel)
 
-        # ----------------------------------------------------------
-        # Database Search Block UI (над SQL Console)
-        # ----------------------------------------------------------
-
-        search_frame = QFrame()
-        self.search_frame = search_frame
-        search_frame.setObjectName("TabsBlock")
-        search_frame.setFixedHeight(44)
-
-        search_layout = QVBoxLayout(search_frame)
-        search_layout.setContentsMargins(8, 6, 8, 6)
-        search_layout.setSpacing(0)
-
-        search_row = QHBoxLayout()
-        search_row.setSpacing(6)
-
-        self.lbl_search_title = QLabel("Поиск БД")
-        self.lbl_search_title.setObjectName("SectionTitle")
-        search_row.addWidget(self.lbl_search_title)
-
-        search_row.addWidget(
-            HelpIcon(
-                "Двойной клик подставит сервер и БД в консоль"
-            )
-        )
-
-        self.ed_search_mask = QLineEdit()
-        self.ed_search_mask.setObjectName("SearchField")
-        self.ed_search_mask.setPlaceholderText("Маска имени БД…")
-        self.ed_search_mask.setClearButtonEnabled(True)
-        self.ed_search_mask.setFixedHeight(28)
-        self.ed_search_mask.addAction(
-            icon("search", 14, "@icon_muted"), QLineEdit.LeadingPosition
-        )
-        search_row.addWidget(self.ed_search_mask, 1)
-
-        search_row.addWidget(
-            HelpIcon(
-                "Поиск по содержимому имени БД. Символы % вводить "
-                "не нужно — поиск выполняется как %текст%"
-            )
-        )
-
-        self.btn_search = QPushButton("Найти БД")
-        self.btn_search.setObjectName("btn_primary")
-        self.btn_search.setToolTip("Найти БД по маске на серверах")
-        search_row.addWidget(self.btn_search)
-
-        self.btn_search_stop = QPushButton("Остановить")
-        self.btn_search_stop.setObjectName("btn_danger")
-        self.btn_search_stop.setEnabled(False)
-        search_row.addWidget(self.btn_search_stop)
-
-        search_layout.addLayout(search_row)
-
         self.tabs = QTabWidget()
         self.tabs.addTab(table_frame, "Результаты")
         self.tabs.addTab(log_frame, "Журнал")
@@ -898,10 +844,9 @@ class MainWindow(QWidget):
         self.right_splitter = CollapsibleSplitter(Qt.Vertical)
         self.right_splitter.setOpaqueResize(True)
         self.right_splitter.setHandleWidth(8)
-        self.right_splitter.addWidget(search_frame)
         self.right_splitter.addWidget(sql_console_frame)
         self.right_splitter.addWidget(self.tabs_frame)
-        self.right_splitter.setSizes([90, 240, 560])
+        self.right_splitter.setSizes([240, 560])
         self.right_splitter.sectionDoubleClicked.connect(
             self._right_section_double_clicked
         )
@@ -1008,16 +953,12 @@ class MainWindow(QWidget):
             self._sql_scope_changed
         )
 
-        self.btn_search.clicked.connect(
+        self.panel.searchRequested.connect(
             self._search_run
         )
 
-        self.btn_search_stop.clicked.connect(
+        self.panel.searchStopRequested.connect(
             self._search_stop
-        )
-
-        self.ed_search_mask.returnPressed.connect(
-            self._search_run
         )
 
         content.addWidget(body_splitter, 1)
@@ -1056,7 +997,7 @@ class MainWindow(QWidget):
         """Оставляет ручки вертикального splitter доступными."""
         # Панели остаются видимыми для Qt и скрываются только размером 0 px.
         if 0 <= section < self.right_splitter.count():
-            names = {0: "SQL Console", 1: "Panel", 2: "Results"}
+            names = {0: "SQL Console", 1: "Results"}
             name = names.get(section, f"Section {section}")
             collapsed = self.right_splitter.is_section_collapsed(section)
             logger.action(f"{name} panel {'collapsed' if collapsed else 'expanded'}")
@@ -1076,10 +1017,10 @@ class MainWindow(QWidget):
         """Показывает или сворачивает Results, сохраняя его ручку."""
         sizes = self.right_splitter.sizes()
         if visible:
-            if sizes[2] == 0:
-                self.right_splitter.setSizes([90, 240, 560])
+            if sizes[1] == 0:
+                self.right_splitter.setSizes([240, 560])
         else:
-            sizes[2] = 0
+            sizes[1] = 0
             self.right_splitter.setSizes(sizes)
 
     def _ensure_results_visible(self, *_args) -> None:
@@ -1570,7 +1511,7 @@ class MainWindow(QWidget):
         if self.search_thread.isRunning():
             return
 
-        mask = self.ed_search_mask.text().strip()
+        mask = self.panel.search_mask()
 
         if not mask:
             self.lbl_sql_status.setText("Введите маску БД.")
@@ -1637,8 +1578,6 @@ class MainWindow(QWidget):
 
         self.search_worker.stop()
 
-        self.btn_search_stop.setEnabled(False)
-
         self._search_stopped = True
 
         logger.action("Search stopped.")
@@ -1647,13 +1586,11 @@ class MainWindow(QWidget):
 
     def _search_started(self):
 
-        self.btn_search.setEnabled(False)
-        self.btn_search_stop.setEnabled(True)
+        self.panel.set_search_busy(True)
 
     def _search_finished(self):
 
-        self.btn_search.setEnabled(True)
-        self.btn_search_stop.setEnabled(False)
+        self.panel.set_search_busy(False)
 
         self.table.setSortingEnabled(True)
 
@@ -1712,9 +1649,7 @@ class MainWindow(QWidget):
 
     def _search_busy(self, busy):
 
-        self.btn_search.setEnabled(not busy)
-        self.btn_search_stop.setEnabled(busy)
-        self.ed_search_mask.setEnabled(not busy)
+        self.panel.set_search_busy(busy)
 
     def _run_table_select(self, server: str, database: str, table: str):
         """Выполняет SELECT * FROM `db`.`table` в фоновом потоке."""
@@ -1915,7 +1850,7 @@ class MainWindow(QWidget):
         self.btn_log_clear.setIcon(icon("delete_outline"))
         self.btn_log_copy.setIcon(icon("content_copy"))
         self.btn_log_save.setIcon(icon("download"))
-        for field in (self.search, self.result_search, self.ed_search_mask):
+        for field in (self.search, self.result_search):
             actions = field.actions()
             if actions:
                 actions[0].setIcon(icon("search", 14, "@icon_muted"))
@@ -2061,7 +1996,7 @@ class MainWindow(QWidget):
         )
         act_toggle_results.triggered.connect(
             lambda: self._toggle_results_panel(
-                self.right_splitter.is_section_collapsed(2)
+                self.right_splitter.is_section_collapsed(1)
             )
         )
         act_toggle_results.setShortcut("Ctrl+Shift+B")

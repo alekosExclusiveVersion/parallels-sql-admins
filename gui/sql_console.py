@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPlainTextEdit,
     QPushButton,
     QStyledItemDelegate,
@@ -148,6 +149,8 @@ class SqlConsolePanel(QWidget):
     clearRequested = Signal()
     serverChanged = Signal(str)
     scopeChanged = Signal()
+    searchRequested = Signal(str)            # найти БД по маске
+    searchStopRequested = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -159,16 +162,51 @@ class SqlConsolePanel(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(6)
 
-        sctop = QHBoxLayout()
+        # --- Тулбар: заголовок, поиск БД, служебные действия ---
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(6)
 
         self.lbl_title = QLabel("SQL Консоль")
         self.lbl_title.setObjectName("SectionTitle")
-        sctop.addWidget(self.lbl_title)
+        toolbar.addWidget(self.lbl_title)
 
-        sctop.addStretch()
+        self.ed_search_mask = QLineEdit()
+        self.ed_search_mask.setObjectName("SearchField")
+        self.ed_search_mask.setPlaceholderText("Маска имени БД…")
+        self.ed_search_mask.setClearButtonEnabled(True)
+        self.ed_search_mask.setFixedHeight(28)
+        self.ed_search_mask.setMaximumWidth(280)
+        self.ed_search_mask.addAction(
+            icon("search", 14, "@icon_muted"), QLineEdit.LeadingPosition
+        )
+        toolbar.addWidget(self.ed_search_mask)
+
+        toolbar.addWidget(
+            HelpIcon(
+                "Поиск БД по маске имени (% вводить не нужно — "
+                "ищется как %текст%). Двойной клик по строке результата "
+                "подставит сервер и БД в консоль."
+            )
+        )
+
+        self.btn_search = QPushButton("Найти БД")
+        self.btn_search.setObjectName("btn_primary")
+        self.btn_search.setFixedHeight(28)
+        self.btn_search.setToolTip("Найти БД по маске на серверах")
+        toolbar.addWidget(self.btn_search)
+
+        self.btn_search_stop = QToolButton()
+        self.btn_search_stop.setObjectName("btn_icon_danger")
+        self.btn_search_stop.setIcon(icon("stop", 16, "@icon_danger"))
+        self.btn_search_stop.setIconSize(QSize(16, 16))
+        self.btn_search_stop.setToolTip("Остановить поиск БД")
+        self.btn_search_stop.setEnabled(False)
+        toolbar.addWidget(self.btn_search_stop)
+
+        toolbar.addStretch()
 
         self.btn_refresh_db = QToolButton()
         self.btn_refresh_db.setObjectName("btn_icon")
@@ -182,10 +220,10 @@ class SqlConsolePanel(QWidget):
         self.btn_clear.setIconSize(QSize(16, 16))
         self.btn_clear.setToolTip("Очистить консоль")
 
-        sctop.addWidget(self.btn_refresh_db)
-        sctop.addWidget(self.btn_clear)
+        toolbar.addWidget(self.btn_refresh_db)
+        toolbar.addWidget(self.btn_clear)
 
-        layout.addLayout(sctop)
+        layout.addLayout(toolbar)
 
         scontrols = QHBoxLayout()
 
@@ -225,7 +263,9 @@ class SqlConsolePanel(QWidget):
 
         layout.addLayout(scontrols)
 
-        scope_row = QHBoxLayout()
+        # Скоуп выполнения + кнопки Run/Stop в одном ряду
+        run_row = QHBoxLayout()
+        run_row.setSpacing(6)
 
         self.chk_all_servers = QCheckBox("Все выбранные серверы")
         self.chk_all_servers.setToolTip(
@@ -237,15 +277,9 @@ class SqlConsolePanel(QWidget):
             "Выполнять по всем базам данных каждого сервера"
         )
 
-        scope_row.addWidget(self.chk_all_servers)
-        scope_row.addWidget(self.chk_all_databases)
+        run_row.addWidget(self.chk_all_servers)
+        run_row.addWidget(self.chk_all_databases)
 
-        scope_row.addStretch()
-
-        layout.addLayout(scope_row)
-
-        # Ряд кнопок Run/Stop непосредственно над полем ввода SQL
-        run_row = QHBoxLayout()
         run_row.addStretch()
 
         self.btn_run = QPushButton("Выполнить")
@@ -294,6 +328,10 @@ class SqlConsolePanel(QWidget):
         self.btn_stop.clicked.connect(self.stopRequested)
         self.btn_refresh_db.clicked.connect(self.refreshDatabasesRequested)
         self.btn_clear.clicked.connect(self._clear)
+
+        self.btn_search.clicked.connect(self._search_submit)
+        self.btn_search_stop.clicked.connect(self.searchStopRequested)
+        self.ed_search_mask.returnPressed.connect(self._search_submit)
 
         self.cb_server.currentTextChanged.connect(self.serverChanged)
         self.chk_all_servers.toggled.connect(self.scopeChanged)
@@ -425,9 +463,27 @@ class SqlConsolePanel(QWidget):
         return self.chk_all_databases.isChecked()
 
     def retheme(self) -> None:
-        """Перекрашивает редактор и подсветку при смене темы."""
+        """Перекрашивает редактор, подсветку и иконки при смене темы."""
         self.highlighter.retheme()
         self.editor.retheme()
+        if self.ed_search_mask.actions():
+            self.ed_search_mask.actions()[0].setIcon(
+                icon("search", 14, "@icon_muted")
+            )
+        self.btn_search_stop.setIcon(icon("stop", 16, "@icon_danger"))
+        self.btn_refresh_db.setIcon(icon("refresh"))
+        self.btn_clear.setIcon(icon("delete_outline"))
+
+    def search_mask(self) -> str:
+        return self.ed_search_mask.text().strip()
+
+    def set_search_busy(self, busy: bool) -> None:
+        self.btn_search.setEnabled(not busy)
+        self.btn_search_stop.setEnabled(busy)
+        self.ed_search_mask.setEnabled(not busy)
+
+    def _search_submit(self) -> None:
+        self.searchRequested.emit(self.search_mask())
 
     def script_text(self) -> str:
         return self.editor.toPlainText()
