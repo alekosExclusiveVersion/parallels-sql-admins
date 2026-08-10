@@ -432,8 +432,9 @@ QListWidget#ScriptsList::item:selected{
 QLineEdit#SearchField{
     background:{input_bg};
     border:1px solid {border};
-    border-radius:6px;
-    padding:2px 6px;
+    border-radius:7px;
+    min-height:22px;
+    padding:0 6px;
     color:{text};
     font-size:12px;
     selection-background-color:{accent};
@@ -442,6 +443,10 @@ QLineEdit#SearchField{
 
 QLineEdit#SearchField:focus{
     border:1px solid {input_focus};
+}
+
+QLineEdit#SearchField:disabled{
+    color:{text_muted};
 }
 
 /* --- Status bar (full-bleed; тёмная в обеих темах) --- */

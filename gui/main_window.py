@@ -591,8 +591,8 @@ class MainWindow(QWidget):
         self.server_frame = QFrame()
         self.server_frame.setMinimumWidth(200)
         server_layout = QVBoxLayout(self.server_frame)
-        server_layout.setContentsMargins(8, 8, 8, 8)
-        server_layout.setSpacing(8)
+        server_layout.setContentsMargins(8, 6, 8, 6)
+        server_layout.setSpacing(6)
 
         self.lbl_servers_title = QLabel("Серверы — выбрано: 0")
         self.lbl_servers_title.setObjectName("SectionTitle")
@@ -609,6 +609,10 @@ class MainWindow(QWidget):
         self.search.setObjectName("SearchField")
         self.search.setPlaceholderText("Поиск сервера, БД, таблицы…")
         self.search.setClearButtonEnabled(True)
+        self.search.setFixedHeight(26)
+        self.search.addAction(
+            icon("search", 14, "@icon_muted"), QLineEdit.LeadingPosition
+        )
         server_layout.addWidget(self.search)
 
         buttons = QHBoxLayout()
@@ -676,8 +680,8 @@ class MainWindow(QWidget):
         table_frame.setObjectName("TabPage")
 
         table_layout = QVBoxLayout(table_frame)
-        table_layout.setContentsMargins(8, 8, 8, 8)
-        table_layout.setSpacing(8)
+        table_layout.setContentsMargins(8, 6, 8, 6)
+        table_layout.setSpacing(6)
 
         filter_layout = QHBoxLayout()
 
@@ -687,6 +691,10 @@ class MainWindow(QWidget):
             "Поиск по всем колонкам..."
         )
         self.result_search.setClearButtonEnabled(True)
+        self.result_search.setFixedHeight(26)
+        self.result_search.addAction(
+            icon("search", 14, "@icon_muted"), QLineEdit.LeadingPosition
+        )
         self.result_search.setToolTip(
             "Сквозной поиск: строка видима, если текст найден "
             "хотя бы в одной колонке (OR)."
@@ -699,6 +707,7 @@ class MainWindow(QWidget):
         self.chk_only_errors = QCheckBox(
             "Только ошибки"
         )
+        self.chk_only_errors.setFixedHeight(26)
 
         filter_layout.addWidget(self.chk_only_errors)
 
@@ -820,37 +829,33 @@ class MainWindow(QWidget):
         search_frame = QFrame()
         self.search_frame = search_frame
         search_frame.setObjectName("TabsBlock")
-        search_frame.setFixedHeight(68)
+        search_frame.setFixedHeight(44)
 
         search_layout = QVBoxLayout(search_frame)
-        search_layout.setContentsMargins(6, 6, 6, 6)
-        search_layout.setSpacing(4)
+        search_layout.setContentsMargins(8, 6, 8, 6)
+        search_layout.setSpacing(0)
 
-        search_top = QHBoxLayout()
+        search_row = QHBoxLayout()
+        search_row.setSpacing(6)
 
         self.lbl_search_title = QLabel("Поиск БД")
         self.lbl_search_title.setObjectName("SectionTitle")
-        search_top.addWidget(self.lbl_search_title)
+        search_row.addWidget(self.lbl_search_title)
 
-        search_top.addWidget(
+        search_row.addWidget(
             HelpIcon(
                 "Двойной клик подставит сервер и БД в консоль"
             )
         )
 
-        search_top.addStretch()
-
-        search_layout.addLayout(search_top)
-
-        search_row = QHBoxLayout()
-
-        self.lbl_search = QLabel("Маска:")
-        self.lbl_search.setObjectName("InlineLabel")
-        search_row.addWidget(self.lbl_search)
-
         self.ed_search_mask = QLineEdit()
         self.ed_search_mask.setObjectName("SearchField")
+        self.ed_search_mask.setPlaceholderText("Маска имени БД…")
         self.ed_search_mask.setClearButtonEnabled(True)
+        self.ed_search_mask.setFixedHeight(28)
+        self.ed_search_mask.addAction(
+            icon("search", 14, "@icon_muted"), QLineEdit.LeadingPosition
+        )
         search_row.addWidget(self.ed_search_mask, 1)
 
         search_row.addWidget(
@@ -1910,6 +1915,10 @@ class MainWindow(QWidget):
         self.btn_log_clear.setIcon(icon("delete_outline"))
         self.btn_log_copy.setIcon(icon("content_copy"))
         self.btn_log_save.setIcon(icon("download"))
+        for field in (self.search, self.result_search, self.ed_search_mask):
+            actions = field.actions()
+            if actions:
+                actions[0].setIcon(icon("search", 14, "@icon_muted"))
 
     # ----------------------------------------------------------
     # Application Menu

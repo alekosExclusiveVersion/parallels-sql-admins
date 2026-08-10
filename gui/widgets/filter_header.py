@@ -24,7 +24,7 @@ class FilterHeaderRow(QWidget):
         super().__init__(parent)
         self._table: QTableWidget | None = None
         self._edits: list[QLineEdit] = []
-        self._row_height = 28
+        self._row_height = 24
         self.setFixedHeight(self._row_height)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(
