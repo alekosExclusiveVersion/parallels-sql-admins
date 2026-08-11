@@ -49,10 +49,10 @@ LIGHT = {
     "success": "#16a34a",
     "warning": "#d97706",
     "error_bg": "#fff5f5",
-    "header_bg": "#f8fafc",
-    "header_border": "#e2e8f0",
-    "header_text": "#475569",
-    "header_hover": "#eef2f7",
+    "header_bg": "#f1f5f9",
+    "header_border": "#d7dfea",
+    "header_text": "#334155",
+    "header_hover": "#e2e8f0",
     "input_bg": "#ffffff",
     "input_focus": "#2563eb",
     "editor_gutter_bg": "#f8fafc",
@@ -117,10 +117,10 @@ DARK = {
     "success": "#4ade80",
     "warning": "#fbbf24",
     "error_bg": "#341316",
-    "header_bg": "#000000",
-    "header_border": "#2a2a2a",
-    "header_text": "#dddddd",
-    "header_hover": "#141414",
+    "header_bg": "#1a1a1a",
+    "header_border": "#333333",
+    "header_text": "#e2e2e2",
+    "header_hover": "#252525",
     "input_bg": "#0a0a0a",
     "input_focus": "#3b82f6",
     "editor_gutter_bg": "#080808",
@@ -377,11 +377,13 @@ QLabel{
 }
 
 QLabel#SectionTitle{
-    font-size:13px;
+    font-size:12px;
     font-weight:700;
-    color:{text};
-    border:none;
-    background:transparent;
+    color:{header_text};
+    background:{header_bg};
+    border:1px solid {header_border};
+    border-radius:7px;
+    padding:3px 10px;
 }
 
 QLabel#MutedLabel{
