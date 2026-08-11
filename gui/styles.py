@@ -861,6 +861,8 @@ QTabWidget{
 QTabWidget::pane{
     border:none;
     border-radius:0;
+    border-bottom-left-radius:10px;
+    border-bottom-right-radius:10px;
     background:{card};
 }
 
@@ -974,11 +976,11 @@ QSplitter::handle{
     border:none;
 }
 
-/* Вертикальная ручка (разделяет лево/право): тонкая линия по центру */
+/* Вертикальная ручка (разделяет лево/право): без линии — рамки панелей
+   по краям уже разделяют карточки */
 QSplitter::handle:horizontal{
-    background:{divider};
-    margin:0 2px 0 2px;
-    border-radius:1px;
+    background:transparent;
+    border:none;
 }
 
 /* Горизонтальная ручка (разделяет верх/низ): без линии — рамки панелей
