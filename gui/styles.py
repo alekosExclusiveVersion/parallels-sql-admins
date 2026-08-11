@@ -117,10 +117,10 @@ DARK = {
     "success": "#4ade80",
     "warning": "#fbbf24",
     "error_bg": "#341316",
-    "header_bg": "#1a1a1a",
-    "header_border": "#333333",
-    "header_text": "#e2e2e2",
-    "header_hover": "#252525",
+    "header_bg": "#000000",
+    "header_border": "#2a2a2a",
+    "header_text": "#dddddd",
+    "header_hover": "#141414",
     "input_bg": "#0a0a0a",
     "input_focus": "#3b82f6",
     "editor_gutter_bg": "#080808",
@@ -377,13 +377,11 @@ QLabel{
 }
 
 QLabel#SectionTitle{
-    font-size:12px;
+    font-size:13px;
     font-weight:700;
-    color:{header_text};
-    background:{header_bg};
-    border:1px solid {header_border};
-    border-radius:7px;
-    padding:3px 10px;
+    color:{text};
+    border:none;
+    background:transparent;
 }
 
 QLabel#MutedLabel{
@@ -510,6 +508,11 @@ QAbstractSpinBox{
     padding:5px;
     selection-background-color:{sel_bg};
     selection-color:{sel_text};
+}
+
+QTableWidget{
+    padding:0;
+    border-radius:0;
 }
 
 QTreeWidget::item{
@@ -812,8 +815,9 @@ QCheckBox::indicator:pressed{
 /* --- Table headers --- */
 QHeaderView::section{
     background:{header_bg};
-    border:none;
-    border-right:1px solid {header_border};
+    border:1px solid {header_border};
+    border-left:none;
+    border-top:none;
     padding:8px 10px;
     font-size:12px;
     font-weight:700;
@@ -843,12 +847,18 @@ QFrame#TabPage{
     background:{card};
 }
 
+QTabBar{
+    background:{card};
+    border:none;
+}
+
 QTabBar::tab{
     background:transparent;
     padding:8px 18px;
     color:{text_muted};
     border:none;
     border-bottom:3px solid transparent;
+    border-radius:7px 7px 0 0;
     font-size:13px;
 }
 
@@ -861,12 +871,14 @@ QTabBar::tab:top{
 }
 
 QTabBar::tab:selected{
+    background:{header_bg};
     color:{accent};
     border-bottom:3px solid {accent};
     font-weight:700;
 }
 
 QTabBar::tab:hover:!selected{
+    background:{header_hover};
     color:{text};
 }
 

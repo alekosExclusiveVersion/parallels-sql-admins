@@ -849,8 +849,9 @@ class MainWindow(QWidget):
 
         # Единый интерфейс: SQL-консоль и открытые скрипты живут в одной
         # вкладке-блоке (скрипты больше не попадают в «Результаты/Журнал»).
+        # DocumentMode не используется: нативная светлая заливка таб-бара
+        # не перекрашивается QSS и даёт белую полосу в тёмной теме.
         self.console_tabs = QTabWidget()
-        self.console_tabs.setDocumentMode(True)
         self.console_tabs.setTabsClosable(True)
         self.console_tabs.tabCloseRequested.connect(
             self._console_tab_close_requested
