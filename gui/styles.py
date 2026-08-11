@@ -853,29 +853,23 @@ QHeaderView::section{
 
 /* --- Tabs --- */
 QTabWidget{
-    background:{card};
+    background:transparent;
     border:none;
-    border-radius:0;
 }
 
 QTabWidget::pane{
     border:none;
-    border-radius:0;
-    border-bottom-left-radius:10px;
-    border-bottom-right-radius:10px;
-    background:{card};
+    background:transparent;
 }
 
 QStackedWidget{
     border:none;
-    border-radius:0;
-    background:{card};
+    background:transparent;
 }
 
 QFrame#TabPage{
     border:none;
-    border-radius:0;
-    background:{card};
+    background:transparent;
 }
 
 QTabBar{
