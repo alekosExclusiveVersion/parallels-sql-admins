@@ -529,7 +529,7 @@ class MainWindow(QWidget):
 
         content_widget = QWidget()
         content = QVBoxLayout(content_widget)
-        content.setContentsMargins(8, 8, 8, 0)
+        content.setContentsMargins(8, 8, 8, 8)
         content.setSpacing(6)
 
         self.status_bar = StatusBar()

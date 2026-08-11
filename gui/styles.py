@@ -852,6 +852,12 @@ QHeaderView::section{
 }
 
 /* --- Tabs --- */
+QTabWidget{
+    background:{card};
+    border:none;
+    border-radius:0;
+}
+
 QTabWidget::pane{
     border:none;
     border-radius:0;
@@ -957,6 +963,11 @@ QToolTip{
 }
 
 /* --- Splitters --- */
+QSplitter{
+    background:transparent;
+    border:none;
+}
+
 QSplitter::handle{
     background:transparent;
     border:none;
@@ -969,11 +980,11 @@ QSplitter::handle:horizontal{
     border-radius:1px;
 }
 
-/* Горизонтальная ручка (разделяет верх/низ): тонкая линия сверху
-   (QSS margin для handle:vertical не применяется, используем border) */
+/* Горизонтальная ручка (разделяет верх/низ): без линии — рамки панелей
+   сверху/снизу уже дают разделители, линия здесь дублировала бы их */
 QSplitter::handle:vertical{
     background:transparent;
-    border-top:1px solid {divider};
+    border:none;
 }
 
 /* --- Scrollbars --- */
