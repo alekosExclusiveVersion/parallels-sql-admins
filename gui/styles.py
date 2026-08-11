@@ -567,6 +567,32 @@ QComboBox QFrame{
     border-radius:0;
 }
 
+/* --- Автодополнение SQL (QCompleter) --- */
+QListView#CompletionPopup{
+    background:{card};
+    border:1px solid {border};
+    border-radius:8px;
+    padding:4px;
+    outline:none;
+}
+
+QListView#CompletionPopup::item{
+    padding:4px 8px;
+    border-radius:4px;
+    border:none;
+    color:{text};
+}
+
+QListView#CompletionPopup::item:hover{
+    background:{hover_bg_strong};
+}
+
+QListView#CompletionPopup::item:selected{
+    background:{sel_bg};
+    color:{sel_text};
+    font-weight:600;
+}
+
 QToolBar{
     background:{card};
     border:1px solid {border};

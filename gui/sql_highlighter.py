@@ -12,20 +12,11 @@ from PySide6.QtGui import (
     QTextCharFormat,
 )
 
+from common.sql_completion import SQL_KEYWORDS
 from gui.styles import qcolor
 
 
-KEYWORDS = [
-    "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "BETWEEN",
-    "LIKE", "ORDER", "BY", "GROUP", "HAVING", "LIMIT", "OFFSET",
-    "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "CROSS", "ON", "AS",
-    "UNION", "ALL", "DISTINCT", "CASE", "WHEN", "THEN", "ELSE", "END",
-    "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE",
-    "CREATE", "ALTER", "DROP", "TRUNCATE", "REPLACE", "RENAME",
-    "GRANT", "REVOKE", "TABLE", "DATABASE", "INDEX", "VIEW", "IF",
-    "EXISTS", "NULL", "TRUE", "FALSE", "USING", "NATURAL",
-    "MAX", "MIN", "COUNT", "SUM", "AVG", "COALESCE", "NOW", "IFNULL",
-]
+KEYWORDS = list(SQL_KEYWORDS)
 
 KEYWORD_RE = re.compile(
     r"\b(" + "|".join(KEYWORDS) + r")\b",

@@ -10,7 +10,7 @@ gui/sql_console.py
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRect, QSize, Qt, Signal
+from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QFontDatabase,
     QKeySequence,
@@ -32,8 +32,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from common.sql_completion import analyze as analyze_completion
 from common.sql_splitter import statement_at
 from gui.icons import icon
+from gui.sql_completer import SqlCompleter
 from gui.styles import qcolor
 from gui.sql_highlighter import SQLHighlighter
 from gui.widgets.help_icon import HelpIcon
@@ -71,9 +73,46 @@ class SqlEditor(QPlainTextEdit):
         super().__init__(parent)
         self._line_number_area = LineNumberArea(self)
 
+        self._completer = None
+        self._completion_timer = QTimer(self)
+        self._completion_timer.setSingleShot(True)
+        self._completion_timer.setInterval(120)
+        self._completion_timer.timeout.connect(self._run_completion)
+
+        self.textChanged.connect(self._schedule_completion)
+        self.cursorPositionChanged.connect(self._schedule_completion)
+
         self.blockCountChanged.connect(self._update_line_number_area_width)
         self.updateRequest.connect(self._update_line_number_area)
         self._update_line_number_area_width()
+
+    def set_completer(self, completer) -> None:
+        self._completer = completer
+
+    def keyPressEvent(self, event) -> None:
+        # Cmd/Ctrl+Space — принудительно показать автодополнение.
+        if (
+            self._completer is not None
+            and event.key() == Qt.Key_Space
+            and event.modifiers() & Qt.ControlModifier
+        ):
+            context = analyze_completion(
+                self.toPlainText(), self.textCursor().position()
+            )
+            self._completer.show_suggestions(context, force=True)
+            return
+        super().keyPressEvent(event)
+
+    def _schedule_completion(self) -> None:
+        self._completion_timer.start()
+
+    def _run_completion(self) -> None:
+        if self._completer is None:
+            return
+        context = analyze_completion(
+            self.toPlainText(), self.textCursor().position()
+        )
+        self._completer.show_suggestions(context)
 
     def line_number_area_width(self) -> int:
         digits = len(str(max(1, self.blockCount())))
@@ -151,6 +190,7 @@ class SqlConsolePanel(QWidget):
     scopeChanged = Signal()
     searchRequested = Signal(str)            # найти БД по маске
     searchStopRequested = Signal()
+    catalogRequested = Signal(str, str)      # запросить каталог таблиц/колонок
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -316,6 +356,16 @@ class SqlConsolePanel(QWidget):
 
         self.highlighter = SQLHighlighter(self.editor.document())
 
+        # Автодополнение: каталог (таблицы/колонки) подгружает MainWindow
+        # по catalogRequested и отдаёт обратно через set_catalog().
+        self._completer = SqlCompleter(self.editor)
+        self.editor.set_completer(self._completer)
+
+        self._catalog_timer = QTimer(self)
+        self._catalog_timer.setSingleShot(True)
+        self._catalog_timer.setInterval(350)
+        self._catalog_timer.timeout.connect(self._catalog_request)
+
         # ----------------------------------------------------------
         # Сигналы
         # ----------------------------------------------------------
@@ -330,8 +380,12 @@ class SqlConsolePanel(QWidget):
         self.ed_search_mask.returnPressed.connect(self._search_submit)
 
         self.cb_server.currentTextChanged.connect(self.serverChanged)
+        self.cb_server.currentTextChanged.connect(self._completion_server_changed)
+        self.cb_database.currentTextChanged.connect(self._catalog_schedule)
         self.chk_all_servers.toggled.connect(self.scopeChanged)
         self.chk_all_databases.toggled.connect(self.scopeChanged)
+        self.chk_all_servers.toggled.connect(self._completion_scope_changed)
+        self.chk_all_databases.toggled.connect(self._completion_scope_changed)
 
         # Cmd/Ctrl+Enter — выделение или оператор под курсором
         self.run_shortcut = QShortcut(
@@ -384,6 +438,41 @@ class SqlConsolePanel(QWidget):
             self.cb_database.setCurrentText("")
 
         self.cb_database.blockSignals(False)
+
+        self._catalog_schedule()
+
+    # ----------------------------------------------------------
+    # Автодополнение (каталог таблиц/колонок)
+    # ----------------------------------------------------------
+
+    def set_catalog(self, tables: list[str], columns: dict[str, list[str]]) -> None:
+        """Обновляет подсказки таблиц/колонок (из MainWindow)."""
+        self._completer.set_catalog(tables, columns)
+
+    def clear_completion(self) -> None:
+        """Сбрасывает каталог подсказок (смена сервера/скоупа)."""
+        self._completer.clear_catalog()
+        self._completer.hide_popup()
+        self._catalog_timer.stop()
+
+    def _catalog_schedule(self) -> None:
+        if self.current_host() and self.current_database():
+            self._catalog_timer.start()
+
+    def _catalog_request(self) -> None:
+        host = self.current_host()
+        database = self.current_database()
+        if host and database:
+            self.catalogRequested.emit(host, database)
+
+    def _completion_server_changed(self, _text: str) -> None:
+        self.clear_completion()
+        self._catalog_schedule()
+
+    def _completion_scope_changed(self, _checked: bool) -> None:
+        # В мульти-скоупе (все серверы/БД) подсказки нерелевантны.
+        if self.chk_all_servers.isChecked() or self.chk_all_databases.isChecked():
+            self.clear_completion()
 
     def set_target(self, server: str, database: str) -> None:
         self._select_server_by_host(server)
@@ -485,11 +574,17 @@ class SqlConsolePanel(QWidget):
         return self.editor.toPlainText()
 
     def insert_script(self, text: str) -> None:
-        """Добавляет текст скрипта в конец редактора консоли."""
+        """Вставляет текст скрипта в конец редактора с отступом 3 строки."""
+        text = text.strip()
+        if not text:
+            return
         cursor = self.editor.textCursor()
         cursor.movePosition(QTextCursor.End)
-        if self.editor.toPlainText().strip():
-            cursor.insertText("\n")
+        current = self.editor.toPlainText()
+        if current:
+            if not current.endswith("\n"):
+                cursor.insertText("\n")
+            cursor.insertText("\n\n\n")
         cursor.insertText(text)
         self.editor.setTextCursor(cursor)
         self.editor.setFocus()

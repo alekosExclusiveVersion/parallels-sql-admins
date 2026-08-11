@@ -43,6 +43,9 @@ def done():
     for r in range(w.table.rowCount()):
         vals = [w.table.item(r, c).text() if w.table.item(r, c) else "" for c in range(w.table.columnCount())]
         print(f"  row {r}: {vals} hidden={w.table.isRowHidden(r)}")
+    # Закрываем окно ДО выхода, чтобы closeEvent остановил потоки:
+    # иначе живые QThread падают в _Py_Finalize (SIGABRT).
+    w.close()
     app.quit()
 
 

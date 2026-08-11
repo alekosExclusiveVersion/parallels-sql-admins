@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from backend.repository import Repository
 from backend.check_worker import CheckWorker
+from backend.completion_worker import CompletionWorker
 from backend.query_worker import ALL_DATABASES, QueryWorker
 from backend.db_search_worker import DatabaseSearchWorker
 from backend.db_sizes_worker import DbSizesWorker
@@ -74,6 +75,17 @@ class MainWindow(QWidget):
         self._create_export_backend()
         self._create_search_backend()
         self._create_sizes_backend()
+        self._create_completion_backend()
+
+        # Гарантия остановки потоков на ЛЮБОМ пути выхода: если процесс
+        # завершается через QApplication.quit() (без закрытия окна, как в
+        # debug-скриптах), closeEvent не вызывается и живые QThread падают
+        # в _Py_Finalize (SIGABRT) — поэтому shutdown() привязываем и к
+        # aboutToQuit (см. _on_about_to_quit).
+        self._shutdown_done = False
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._on_about_to_quit)
 
         theme_styles.register_theme_listener(self._on_theme_applied)
 
@@ -249,6 +261,25 @@ class MainWindow(QWidget):
         self.sizes_worker.error.connect(
             self._sizes_error
         )
+
+    def _create_completion_backend(self):
+
+        self.completion_host = WorkerHost(CompletionWorker, self)
+        self.completion_thread = self.completion_host.thread
+        self.completion_worker = self.completion_host.worker
+
+        self.completion_worker.catalog_ready.connect(
+            self._completion_catalog_ready
+        )
+
+        self.completion_worker.error.connect(
+            self._completion_catalog_error
+        )
+
+        # Кэш каталога автодополнения по (host, database) с TTL.
+        self._completion_cache: dict[tuple[str, str], tuple[list, dict, float]] = {}
+        self._completion_pending = False
+        self._completion_request = None
 
         self.servers_tree.databasesRequested.connect(
             self.sizes_worker.request_databases
@@ -961,6 +992,10 @@ class MainWindow(QWidget):
             self._sql_scope_changed
         )
 
+        self.panel.catalogRequested.connect(
+            self._completion_catalog_requested
+        )
+
         self.panel.searchRequested.connect(
             self._search_run
         )
@@ -1276,6 +1311,63 @@ class MainWindow(QWidget):
         )
         self.panel.cb_database.setEnabled(
             not self.panel.all_databases_checked()
+        )
+
+    _COMPLETION_TTL = 300  # секунд, после чего каталог перечитывается
+
+    def _completion_catalog_requested(self, host, database):
+        host = (host or "").strip()
+        database = (database or "").strip()
+
+        if not host or not database:
+            return
+
+        key = (host, database)
+        cached = self._completion_cache.get(key)
+        now = time.monotonic()
+
+        if cached is not None and now - cached[2] < self._COMPLETION_TTL:
+            self.panel.set_catalog(cached[0], cached[1])
+            return
+
+        if self.completion_thread.isRunning():
+            # Текущий запрос ещё выполняется — запомним и повторим после.
+            self._completion_pending = True
+            self._completion_request = key
+            return
+
+        # Сбрасываем старый каталог, чтобы не показывать чужие таблицы.
+        self.panel.clear_completion()
+
+        logger.info(f"Completion catalog requested: {host}/{database}")
+
+        self.completion_worker.set_request(host, database)
+        self.completion_thread.start()
+
+    def _completion_catalog_ready(self, host, database, tables, columns):
+        self._completion_cache[(host, database)] = (
+            list(tables),
+            dict(columns),
+            time.monotonic(),
+        )
+        self.panel.set_catalog(tables, columns)
+
+        if self._completion_pending:
+            self._completion_pending = False
+            request = self._completion_request
+            self._completion_request = None
+            if request is not None:
+                # Стартуем после того, как поток завершит текущую задачу.
+                QTimer.singleShot(
+                    0,
+                    lambda: self._completion_catalog_requested(*request),
+                )
+
+    def _completion_catalog_error(self, host, database, message):
+        self.panel.set_catalog([], {})
+        self.append_log(
+            "WARNING",
+            f"Автодополнение [{host}/{database}]: {message}",
         )
 
     def _sql_stop(self):
@@ -1746,23 +1838,46 @@ class MainWindow(QWidget):
 
         logger.action(f"Log saved to {filename}")
 
+    def _on_about_to_quit(self):
+        """QApplication.aboutToQuit → останавливаем потоки до выхода.
+
+        Покрывает путь завершения через quit(), когда окно не закрывается и
+        closeEvent не приходит.
+        """
+        self.shutdown()
+
     def shutdown(self):
-        """Останавливает все фоновые потоки (вызывается из App.closeEvent)."""
+        """Останавливает все фоновые потоки (вызывается из closeEvent/aboutToQuit)."""
+        if self._shutdown_done:
+            return
+        self._shutdown_done = True
+
         self._theme_timer.stop()
         theme_styles.unregister_theme_listener(self._on_theme_applied)
-        self.worker.stop()
-        self.query_worker.stop()
-        self.search_worker.stop()
-        self.sizes_worker.stop()
-        self.export_worker.stop()
+
+        for worker in (
+            self.worker,
+            self.query_worker,
+            self.search_worker,
+            self.sizes_worker,
+            self.export_worker,
+            self.completion_worker,
+        ):
+            try:
+                worker.stop()
+            except Exception:
+                pass
 
         # Прерываем активный экспорт на сервере (KILL), чтобы поток
         # вышел быстро, а не ждал read_timeout.
-        if self.export_thread.isRunning():
-            threading.Thread(
-                target=self.export_worker.kill_active,
-                daemon=True,
-            ).start()
+        try:
+            if self.export_thread.isRunning():
+                threading.Thread(
+                    target=self.export_worker.kill_active,
+                    daemon=True,
+                ).start()
+        except Exception:
+            pass
 
         for thr in (
             self.thread,
@@ -1770,17 +1885,27 @@ class MainWindow(QWidget):
             self.search_thread,
             self.sizes_thread,
             self.export_thread,
+            self.completion_thread,
         ):
-            if thr.isRunning():
-                thr.quit()
-                if not thr.wait(5000):
-                    thr.terminate()
-                    thr.wait()
+            try:
+                if thr.isRunning():
+                    thr.requestInterruption()
+                    thr.quit()
+                    if not thr.wait(5000):
+                        thr.terminate()
+                        thr.wait(2000)
+            except Exception:
+                pass
 
-        mysql.close_all()
+        try:
+            mysql.close_all()
+        except Exception:
+            pass
 
-        logger.session_end()
-        logger.cleanup()
+        try:
+            logger.session_end()
+        finally:
+            logger.cleanup()
 
     def event(self, e):
         if e.type() == QEvent.ApplicationPaletteChange:
