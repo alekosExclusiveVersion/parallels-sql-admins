@@ -877,8 +877,10 @@ QFrame#TabPage{
 }
 
 QTabBar{
-    background:{card};
+    background:{header_bg};
     border:none;
+    border-top-left-radius:10px;
+    border-top-right-radius:10px;
 }
 
 QTabBar::tab{
@@ -887,7 +889,7 @@ QTabBar::tab{
     color:{text_muted};
     border:none;
     border-bottom:3px solid transparent;
-    border-radius:7px 7px 0 0;
+    border-radius:0;
     font-size:13px;
 }
 
@@ -900,7 +902,6 @@ QTabBar::tab:top{
 }
 
 QTabBar::tab:selected{
-    background:{header_bg};
     color:{accent};
     border-bottom:3px solid {accent};
     font-weight:700;
