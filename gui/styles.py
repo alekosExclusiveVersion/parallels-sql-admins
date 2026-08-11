@@ -53,6 +53,11 @@ LIGHT = {
     "header_border": "#d7dfea",
     "header_text": "#334155",
     "header_hover": "#e2e8f0",
+    "status_bg": "#ffffff",
+    "status_border": "#d7dfea",
+    "status_label": "#64748b",
+    "status_value": "#334155",
+    "status_progress_bg": "#cbd5e1",
     "input_bg": "#ffffff",
     "input_focus": "#2563eb",
     "editor_gutter_bg": "#f8fafc",
@@ -121,6 +126,11 @@ DARK = {
     "header_border": "#2a2a2a",
     "header_text": "#dddddd",
     "header_hover": "#141414",
+    "status_bg": "#0d0d0d",
+    "status_border": "#232323",
+    "status_label": "#8f8f8f",
+    "status_value": "#e2e2e2",
+    "status_progress_bg": "rgba(255,255,255,0.12)",
     "input_bg": "#0a0a0a",
     "input_focus": "#3b82f6",
     "editor_gutter_bg": "#080808",
@@ -379,8 +389,10 @@ QLabel{
 QLabel#SectionTitle{
     font-size:13px;
     font-weight:700;
-    color:{text};
+    color:{text_secondary};
     border:none;
+    border-left:3px solid {accent};
+    padding:0 0 0 8px;
     background:transparent;
 }
 
@@ -449,21 +461,31 @@ QLineEdit#SearchField:disabled{
     color:{text_muted};
 }
 
-/* --- Status bar (full-bleed; тёмная в обеих темах) --- */
+/* --- Status bar (полноширинная строка внизу; цвет по теме) --- */
 QFrame#StatusBar{
-    background:qlineargradient(x1:0,y1:0,x2:0,y2:1,
-        stop:0 #232323, stop:1 #000000);
+    background:{status_bg};
     border:none;
+    border-top:1px solid {status_border};
     border-radius:0;
 }
 
 QFrame#StatusBar QLabel{
     border:none;
     background:transparent;
+    font-size:12px;
+}
+
+QFrame#StatusBar QLabel#StatusCaption{
+    color:{status_label};
+}
+
+QFrame#StatusBar QLabel#StatusValue{
+    color:{status_value};
+    font-weight:600;
 }
 
 QFrame#StatusBar QProgressBar{
-    background:rgba(255,255,255,0.12);
+    background:{status_progress_bg};
     border:none;
     border-radius:4px;
     min-height:6px;
@@ -813,6 +835,11 @@ QCheckBox::indicator:pressed{
 }
 
 /* --- Table headers --- */
+QHeaderView{
+    background:{header_bg};
+    border:none;
+}
+
 QHeaderView::section{
     background:{header_bg};
     border:1px solid {header_border};
@@ -822,10 +849,6 @@ QHeaderView::section{
     font-size:12px;
     font-weight:700;
     color:{header_text};
-}
-
-QHeaderView::section:hover{
-    background:{header_hover};
 }
 
 /* --- Tabs --- */

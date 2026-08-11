@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QFileDialog,
     QToolButton,
-    QProgressBar,
     QLineEdit,
     QCheckBox,
     QMessageBox,
@@ -46,6 +45,7 @@ from common.server_registry import (
 )
 from gui.icons import icon, set_icon_theme
 from gui import styles as theme_styles
+from gui.widgets.status_bar import StatusBar
 from gui.widgets.collapsible_splitter import CollapsibleSplitter
 from gui.widgets.help_icon import HelpIcon
 from gui.worker_thread import WorkerHost
@@ -295,13 +295,7 @@ class MainWindow(QWidget):
 
     def _update_progress(self, current, total):
 
-        if total == 0:
-            self.progress.setValue(0)
-            return
-
-        percent = int(current * 100 / total)
-
-        self.progress.setValue(percent)
+        self.status_bar.set_progress(current, total)
 
     # ----------------------------------------------------------
     # Repository
@@ -330,9 +324,7 @@ class MainWindow(QWidget):
 
         count = len(hosts)
 
-        self.lbl_servers_value.setText(
-            f"{count} / {count}"
-        )
+        self.status_bar.set_servers(count, count)
 
         self.lbl_servers_title.setText(
             "Серверы — выбрано: 0"
@@ -443,11 +435,10 @@ class MainWindow(QWidget):
         self.table.clear_results()
         self.table.results_source = "check"
 
-        self.progress.setValue(0)
+        self.status_bar.set_progress(0, 0)
 
-        self.lbl_elapsed_value.setText("00:00:00")
-
-        self.lbl_status_value.setText("Готово")
+        self.status_bar.set_elapsed(0)
+        self.status_bar.set_status("Готово")
 
         self.table.clearSelection()
 
@@ -479,7 +470,7 @@ class MainWindow(QWidget):
 
         self._set_scripts_running(True)
 
-        self.lbl_status_value.setText("Проверка...")
+        self.status_bar.set_status("Проверка...")
 
         self.append_log(
             "INFO",
@@ -502,9 +493,9 @@ class MainWindow(QWidget):
 
         self.table.apply_filters()
 
-        self.progress.setValue(100)
+        self.status_bar.set_progress(100, 100)
 
-        self.lbl_status_value.setText("Готово")
+        self.status_bar.set_status("Готово")
 
         self.append_log(
             "SUCCESS",
@@ -541,77 +532,10 @@ class MainWindow(QWidget):
         content.setContentsMargins(8, 8, 8, 0)
         content.setSpacing(6)
 
-        status_bar = QFrame()
-        status_bar.setObjectName("StatusBar")
-
-        status_layout = QHBoxLayout(status_bar)
-        status_layout.setContentsMargins(12, 3, 12, 3)
-        status_layout.setSpacing(6)
-
-        self.lbl_status = QLabel("Статус:")
-        self.lbl_status_value = QLabel("Готово")
-
-        self.lbl_servers = QLabel("Серверы:")
-        self.lbl_servers_value = QLabel("0 / 0")
-
-        self.lbl_elapsed = QLabel("Прошло:")
-        self.lbl_elapsed_value = QLabel("00:00:00")
-
-        self.lbl_sql = QLabel("SQL Консоль:")
-        self.lbl_sql_status = QLabel("Готово")
-
-        for label in (
-            self.lbl_status,
-            self.lbl_servers,
-            self.lbl_elapsed,
-            self.lbl_sql,
-        ):
-            label.setStyleSheet(
-                "color:#94a3b8;font-size:12px;border:none;"
-                "background:transparent;"
-            )
-
-        for label in (
-            self.lbl_status_value,
-            self.lbl_servers_value,
-            self.lbl_elapsed_value,
-            self.lbl_sql_status,
-        ):
-            label.setStyleSheet(
-                "color:#f8fafc;font-size:12px;font-weight:600;"
-                "border:none;background:transparent;"
-            )
-
-        status_layout.addWidget(self.lbl_status)
-        status_layout.addWidget(self.lbl_status_value)
-
-        status_layout.addSpacing(12)
-
-        status_layout.addWidget(self.lbl_servers)
-        status_layout.addWidget(self.lbl_servers_value)
-
-        status_layout.addSpacing(12)
-
-        status_layout.addWidget(self.lbl_elapsed)
-        status_layout.addWidget(self.lbl_elapsed_value)
-
-        status_layout.addSpacing(12)
-
-        status_layout.addWidget(self.lbl_sql)
-        status_layout.addWidget(self.lbl_sql_status)
-
-        status_layout.addStretch()
-
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setValue(0)
-        self.progress.setFixedWidth(160)
-        self.progress.setTextVisible(False)
-
-        status_layout.addWidget(self.progress)
+        self.status_bar = StatusBar()
 
         self._build_theme_toggle()
-        status_layout.addWidget(self.btn_theme)
+        self.status_bar.add_widget(self.btn_theme)
 
         body_splitter = CollapsibleSplitter(Qt.Horizontal)
         body_splitter.setHandleWidth(6)
@@ -1009,7 +933,7 @@ class MainWindow(QWidget):
 
         root.addWidget(content_widget, 1)
 
-        root.addWidget(status_bar)
+        root.addWidget(self.status_bar)
 
         self._started_at = None
 
@@ -1210,7 +1134,7 @@ class MainWindow(QWidget):
     def _run_sql(self, sql: str):
 
         if self.query_thread.isRunning():
-            self.lbl_sql_status.setText("Запрос уже выполняется. Подождите или нажмите «Остановить».")
+            self.status_bar.set_sql_status("Запрос уже выполняется. Подождите или нажмите «Остановить».")
             return
 
         sql = sql.strip()
@@ -1219,13 +1143,13 @@ class MainWindow(QWidget):
             return
 
         if not split_statements(sql):
-            self.lbl_sql_status.setText("Нет SQL-запросов для выполнения.")
+            self.status_bar.set_sql_status("Нет SQL-запросов для выполнения.")
             return
 
         targets = self._sql_build_targets()
 
         if not targets:
-            self.lbl_sql_status.setText("Не выбраны цели.")
+            self.status_bar.set_sql_status("Не выбраны цели.")
             return
 
         if not self.panel.write_enabled() and is_write_statement(sql):
@@ -1251,7 +1175,7 @@ class MainWindow(QWidget):
 
         self._last_sql_request = (targets, sql)
 
-        self.lbl_sql_status.setText(
+        self.status_bar.set_sql_status(
             f"Выполнение на {len(targets)} цели(ях)..."
         )
         self.panel.set_busy(True)
@@ -1374,7 +1298,7 @@ class MainWindow(QWidget):
     def _sql_stop(self):
 
         self.query_worker.stop()
-        self.lbl_sql_status.setText("Остановка...")
+        self.status_bar.set_sql_status("Остановка...")
 
         logger.action("SQL execution stopped by user")
 
@@ -1395,7 +1319,7 @@ class MainWindow(QWidget):
             self._sql_error("Не выбран сервер.")
             return
 
-        self.lbl_sql_status.setText("Загрузка списка БД...")
+        self.status_bar.set_sql_status("Загрузка списка БД...")
         self.panel.set_busy(True)
         self.panel.set_stop_enabled(False)
 
@@ -1408,7 +1332,7 @@ class MainWindow(QWidget):
     def _sql_clear(self):
 
         self.table.clear_results()
-        self.lbl_sql_status.setText("Готово")
+        self.status_bar.set_sql_status("Готово")
 
     def _set_export_ui(self, running: bool) -> None:
 
@@ -1433,17 +1357,17 @@ class MainWindow(QWidget):
                 daemon=True,
             ).start()
 
-            self.lbl_sql_status.setText("Остановка экспорта...")
+            self.status_bar.set_sql_status("Остановка экспорта...")
             return
 
         if self._last_sql_request is None:
-            self.lbl_sql_status.setText("Сначала выполните запрос.")
+            self.status_bar.set_sql_status("Сначала выполните запрос.")
             return
 
         targets, sql = self._last_sql_request
 
         if is_write_statement(sql):
-            self.lbl_sql_status.setText("Экспорт доступен только для запросов на чтение.")
+            self.status_bar.set_sql_status("Экспорт доступен только для запросов на чтение.")
             return
 
         filename, _ = QFileDialog.getSaveFileName(
@@ -1456,7 +1380,7 @@ class MainWindow(QWidget):
         if not filename:
             return
 
-        self.lbl_sql_status.setText("Экспорт всех результатов...")
+        self.status_bar.set_sql_status("Экспорт всех результатов...")
         self._set_export_ui(True)
 
         logger.action(f"Export started: {filename}")
@@ -1467,7 +1391,7 @@ class MainWindow(QWidget):
 
     def _export_done(self, total_rows, filepath):
 
-        self.lbl_sql_status.setText(
+        self.status_bar.set_sql_status(
             f"Сохранено строк: {total_rows} → {filepath}"
         )
 
@@ -1484,7 +1408,7 @@ class MainWindow(QWidget):
 
     def _export_error(self, message):
 
-        self.lbl_sql_status.setText(f"Ошибка экспорта: {message}")
+        self.status_bar.set_sql_status(f"Ошибка экспорта: {message}")
         self._set_export_ui(False)
 
         self.append_log(
@@ -1501,7 +1425,7 @@ class MainWindow(QWidget):
 
     def _export_stopped(self, done, total):
 
-        self.lbl_sql_status.setText(
+        self.status_bar.set_sql_status(
             f"Экспорт остановлен ({done} из {total})"
         )
         self._set_export_ui(False)
@@ -1518,7 +1442,7 @@ class MainWindow(QWidget):
 
     def _sql_target_started(self, index, total, host, database):
 
-        self.lbl_sql_status.setText(
+        self.status_bar.set_sql_status(
             f"Выполнение ({index}/{total}) {host}.{database}"
         )
 
@@ -1539,7 +1463,7 @@ class MainWindow(QWidget):
             message,
         )
 
-        self.lbl_sql_status.setText(
+        self.status_bar.set_sql_status(
             f"OK {host}.{database} — {message}"
         )
 
@@ -1558,13 +1482,13 @@ class MainWindow(QWidget):
             f"ERROR: {message}",
         )
 
-        self.lbl_sql_status.setText(
+        self.status_bar.set_sql_status(
             f"Ошибка {host}.{database}"
         )
 
     def _sql_target_stopped(self, done, total):
 
-        self.lbl_sql_status.setText(
+        self.status_bar.set_sql_status(
             f"Остановлено ({done} из {total})"
         )
         self.panel.set_busy(False)
@@ -1582,12 +1506,12 @@ class MainWindow(QWidget):
             message,
         )
 
-        self.lbl_sql_status.setText(message)
+        self.status_bar.set_sql_status(message)
         self.panel.set_busy(False)
 
     def _sql_error(self, message):
 
-        self.lbl_sql_status.setText(f"Ошибка: {message}")
+        self.status_bar.set_sql_status(f"Ошибка: {message}")
         self.panel.set_busy(False)
 
         self.append_log(
@@ -1599,7 +1523,7 @@ class MainWindow(QWidget):
 
         self.panel.set_databases(names)
 
-        self.lbl_sql_status.setText(
+        self.status_bar.set_sql_status(
             f"Загружено БД: {len(names)}."
         )
         self.panel.set_busy(False)
@@ -1616,7 +1540,7 @@ class MainWindow(QWidget):
         mask = self.panel.search_mask()
 
         if not mask:
-            self.lbl_sql_status.setText("Введите маску БД.")
+            self.status_bar.set_sql_status("Введите маску БД.")
             return
 
         # Транслитерация '?' и '*' в LIKE-джокеры.
@@ -1628,7 +1552,7 @@ class MainWindow(QWidget):
         # Запрещаем небезопасные символы (обратная кавычка, точка-звёздочка),
         # чтобы не ломать запрос и не выводить мусор.
         if any(ch in mask for ch in ("`", "\x00")):
-            self.lbl_sql_status.setText(
+            self.status_bar.set_sql_status(
                 "Маска содержит недопустимые символы."
             )
             return
@@ -1636,7 +1560,7 @@ class MainWindow(QWidget):
         servers = self.repository.load_servers()
 
         if not servers:
-            self.lbl_sql_status.setText("Нет серверов для поиска.")
+            self.status_bar.set_sql_status("Нет серверов для поиска.")
             return
 
         servers = [spec.host for spec in servers]
@@ -1645,7 +1569,7 @@ class MainWindow(QWidget):
         servers = [s for s in servers if registry.engine(s) == ENGINE_MYSQL]
 
         if not servers:
-            self.lbl_sql_status.setText("Нет MySQL-серверов для поиска.")
+            self.status_bar.set_sql_status("Нет MySQL-серверов для поиска.")
             return
 
         # Поиск показывает результат в таблице Results с колонками
@@ -1653,13 +1577,13 @@ class MainWindow(QWidget):
         self.table.reset_table()
         self.table.results_source = "search"
 
-        self.progress.setValue(0)
+        self.status_bar.set_progress(0, 0)
 
         self._search_found = 0
         self._search_completed = 0
         self._search_stopped = False
 
-        self.lbl_sql_status.setText(
+        self.status_bar.set_sql_status(
             f"Поиск «{mask}» на {len(servers)} сервере(ах)..."
         )
 
@@ -1684,7 +1608,7 @@ class MainWindow(QWidget):
 
         logger.action("Search stopped.")
 
-        self.lbl_sql_status.setText("Остановка поиска...")
+        self.status_bar.set_sql_status("Остановка поиска...")
 
     def _search_started(self):
 
@@ -1703,9 +1627,9 @@ class MainWindow(QWidget):
         self._search_busy(False)
 
         if self._search_stopped:
-            self.lbl_sql_status.setText("Поиск остановлен.")
+            self.status_bar.set_sql_status("Поиск остановлен.")
         else:
-            self.lbl_sql_status.setText(
+            self.status_bar.set_sql_status(
                 f"Поиск завершён: найдено БД — {self._search_found} "
                 f"на {self._search_completed} сервере(ах)."
             )
@@ -1714,7 +1638,7 @@ class MainWindow(QWidget):
                 f"servers={self._search_completed}"
             )
 
-        self.progress.setValue(0)
+        self.status_bar.set_progress(0, 0)
 
         # Неразрушающее обновление размеров раскрытых серверов:
         # дерево остаётся раскрытым, свежие данные приходят в фоне.
@@ -1768,7 +1692,7 @@ class MainWindow(QWidget):
             ).start()
             self.query_thread.wait(5000)
             if self.query_thread.isRunning():
-                self.lbl_sql_status.setText(
+                self.status_bar.set_sql_status(
                     "Не удалось остановить текущий запрос."
                 )
                 self.append_log(
@@ -1785,7 +1709,7 @@ class MainWindow(QWidget):
         self.table.reset_table()
         self.table.results_source = "sql"
 
-        self.lbl_sql_status.setText(
+        self.status_bar.set_sql_status(
             f"Выполнение {server}.{database}.{table}..."
         )
         self.panel.set_busy(True)
@@ -2228,14 +2152,6 @@ class MainWindow(QWidget):
         if self._started_at is None:
             return
 
-        seconds = int(
-            time.perf_counter() - self._started_at
-        )
-
-        h = seconds // 3600
-        m = (seconds % 3600) // 60
-        s = seconds % 60
-
-        self.lbl_elapsed_value.setText(
-            f"{h:02}:{m:02}:{s:02}"
+        self.status_bar.set_elapsed(
+            int(time.perf_counter() - self._started_at)
         )
