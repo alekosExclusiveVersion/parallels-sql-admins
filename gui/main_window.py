@@ -679,6 +679,8 @@ class MainWindow(QWidget):
 
         filter_layout.addWidget(self.btn_export_all)
 
+        filter_layout.addStretch()
+
         table_layout.addLayout(filter_layout)
 
         self.table = ResultTable()
