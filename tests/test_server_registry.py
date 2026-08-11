@@ -29,7 +29,11 @@ def fake_config(**overrides) -> SimpleNamespace:
         password=overrides.get("password", ""),
         port=3306,
     )
-    mssql = SimpleNamespace(user="sa", password="", port=1433)
+    mssql = SimpleNamespace(
+        user=overrides.get("mssql_user", "sa"),
+        password=overrides.get("mssql_password", ""),
+        port=1433,
+    )
     advanced = SimpleNamespace(
         servers_file=str(overrides.get("servers_file", "servers.json")),
     )
@@ -176,6 +180,58 @@ class TestServerRegistryLookup(ServerRegistryTestBase):
             self.assertEqual(
                 registry.credentials_for("unknown"),
                 ("global", "gp", 3306),
+            )
+
+    def test_credentials_fallback_empty_password_mysql(self):
+        registry.add(
+            ServerSpec(host="mempty", engine=ENGINE_MYSQL, user="mu", password="")
+        )
+        with patch(
+            "common.server_registry.config",
+            fake_config(user="global", password="gp"),
+        ):
+            self.assertEqual(
+                registry.credentials_for("mempty"),
+                ("mu", "gp", 3306),
+            )
+
+    def test_credentials_fallback_empty_password_mssql(self):
+        registry.add(
+            ServerSpec(host="sempty", engine=ENGINE_MSSQL, user="su", password="")
+        )
+        with patch(
+            "common.server_registry.config",
+            fake_config(password="gp", mssql_password="gps"),
+        ):
+            self.assertEqual(
+                registry.credentials_for("sempty"),
+                ("su", "gps", 1433),
+            )
+
+    def test_credentials_mysql_does_not_leak_mssql_password(self):
+        registry.add(
+            ServerSpec(host="m2", engine=ENGINE_MYSQL, user="mu2", password="")
+        )
+        with patch(
+            "common.server_registry.config",
+            fake_config(password="gp", mssql_password="gps"),
+        ):
+            self.assertEqual(
+                registry.credentials_for("m2"),
+                ("mu2", "gp", 3306),
+            )
+
+    def test_credentials_spec_password_wins_over_config(self):
+        registry.add(
+            ServerSpec(host="m3", engine=ENGINE_MYSQL, user="mu3", password="own")
+        )
+        with patch(
+            "common.server_registry.config",
+            fake_config(user="global", password="gp"),
+        ):
+            self.assertEqual(
+                registry.credentials_for("m3"),
+                ("mu3", "own", 3306),
             )
 
     def test_engine_lookup(self):

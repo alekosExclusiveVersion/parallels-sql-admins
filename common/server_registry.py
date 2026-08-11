@@ -238,14 +238,26 @@ class ServerRegistry:
     def credentials_for(self, host: str) -> tuple[str, str, int]:
         """Возвращает (user, password, port) для подключения к хосту.
 
-        Приоритет: реквизиты сервера из реестра → глобальные из config.ini.
+        Приоритет: реквизиты сервера из реестра → глобальные из config.ini
+        соответствующей СУБД. Пустое поле в записи сервера означает
+        «взять глобальное значение» (записи без собственного пароля
+        наследуют пароль из config.ini своего движка).
         """
         spec = self.find(host)
 
         if spec is None:
             return config.mysql.user, config.mysql.password, config.mysql.port
 
-        return spec.user, spec.password, spec.port
+        if spec.engine == ENGINE_MSSQL:
+            user = spec.user or config.mssql.user
+            password = spec.password or config.mssql.password
+            port = spec.port or config.mssql.port
+        else:
+            user = spec.user or config.mysql.user
+            password = spec.password or config.mysql.password
+            port = spec.port or config.mysql.port
+
+        return user, password, port
 
     def engine_is_mssql(self, host: str) -> bool:
         return self.engine(host) == ENGINE_MSSQL

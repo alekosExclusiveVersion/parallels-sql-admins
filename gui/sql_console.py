@@ -10,7 +10,7 @@ gui/sql_console.py
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QFontDatabase,
     QKeySequence,
@@ -87,20 +87,128 @@ class SqlEditor(QPlainTextEdit):
         self._update_line_number_area_width()
 
     def set_completer(self, completer) -> None:
+        """Устанавливает автодополнение и перехватывает Enter/Tab/Esc
+        в попапе, чтобы QPlainTextEdit не съедал эти клавиши."""
         self._completer = completer
+        if completer is not None:
+            completer.activated.connect(self._insert_completion)
+            completer.popup().installEventFilter(self)
+
+    def _insert_completion(self, text: str) -> None:
+        """Вставляет выбранную подсказку вместо вводимого префикса."""
+        if self._completer is None:
+            return
+
+        tc = self.textCursor()
+        prefix = self._completer.completionPrefix()
+        if prefix:
+            tc.movePosition(
+                QTextCursor.Left,
+                QTextCursor.KeepAnchor,
+                len(prefix),
+            )
+        tc.insertText(text)
+        self.setTextCursor(tc)
+        self._completer.hide_popup()
+
+    def _accept_current_completion(self) -> bool:
+        """Вставляет подсвеченную в попапе подсказку.
+
+        Использует текущий индекс попапа (текущая строка QCompleter
+        не меняется при навигации стрелками).
+        """
+        completer = self._completer
+        if completer is None or not completer.popup().isVisible():
+            return False
+
+        index = completer.popup().currentIndex()
+        if not index.isValid():
+            return False
+
+        model = completer.popup().model()
+        if model is None:
+            return False
+
+        source_index = model.mapToSource(index)
+        if not source_index.isValid():
+            return False
+
+        text = source_index.data()
+        if not text:
+            return False
+
+        completer.activated.emit(str(text))
+        return True
+
+    def eventFilter(self, obj, event) -> bool:
+        completer = self._completer
+        if (
+            completer is not None
+            and obj is completer.popup()
+            and event.type() == QEvent.KeyPress
+        ):
+            key = event.key()
+            if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab):
+                self._accept_current_completion()
+                completer.popup().hide()
+                return True
+            if key == Qt.Key_Escape:
+                completer.hide_popup()
+                return True
+            if key in (Qt.Key_Down, Qt.Key_Up):
+                return self._move_popup_cursor(key)
+        return super().eventFilter(obj, event)
+
+    def _move_popup_cursor(self, key: int) -> bool:
+        """Перемещает подсветку попапа на одну строку (без обёртки).
+
+        Штатный QCompleter съедает первый Down на первой строке и после
+        последней уводит индекс в -1; здесь навигация предсказуема.
+        """
+        completer = self._completer
+        if completer is None:
+            return False
+
+        popup = completer.popup()
+        model = popup.model()
+        rows = model.rowCount()
+        if rows == 0:
+            return True
+
+        index = popup.currentIndex()
+        row = index.row() if index.isValid() else (-1 if key == Qt.Key_Down else rows)
+        if key == Qt.Key_Down:
+            row = min(row + 1, rows - 1)
+        else:
+            row = max(row - 1, 0)
+        popup.setCurrentIndex(model.index(row, 0))
+        return True
 
     def keyPressEvent(self, event) -> None:
-        # Cmd/Ctrl+Space — принудительно показать автодополнение.
-        if (
-            self._completer is not None
-            and event.key() == Qt.Key_Space
-            and event.modifiers() & Qt.ControlModifier
-        ):
-            context = analyze_completion(
-                self.toPlainText(), self.textCursor().position()
-            )
-            self._completer.show_suggestions(context, force=True)
-            return
+        completer = self._completer
+        if completer is not None:
+            # Cmd/Ctrl+Space — принудительно показать автодополнение.
+            if (
+                event.key() == Qt.Key_Space
+                and event.modifiers() & Qt.ControlModifier
+            ):
+                context = analyze_completion(
+                    self.toPlainText(), self.textCursor().position()
+                )
+                completer.show_suggestions(context, force=True)
+                return
+
+            # Пока попап открыт: Enter/Tab выбирают подсказку, Esc — закрыть.
+            if completer.popup().isVisible():
+                key = event.key()
+                if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab):
+                    self._accept_current_completion()
+                    completer.popup().hide()
+                    return
+                if key == Qt.Key_Escape:
+                    completer.hide_popup()
+                    return
+
         super().keyPressEvent(event)
 
     def _schedule_completion(self) -> None:
