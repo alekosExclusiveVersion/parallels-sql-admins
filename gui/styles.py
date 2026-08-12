@@ -77,6 +77,7 @@ LIGHT = {
     # Фирменные цвета движков БД (официальные, на светлом фоне).
     "mysql_brand": "#3b6d99",
     "mssql_brand": "#b91c1c",
+    "pgsql_brand": "#336791",
     "alt_base": "#f8fafc",
     "sql_keyword": "#1565c0",
     "sql_string": "#2e7d32",
@@ -151,6 +152,7 @@ DARK = {
     # читаемы на чисто-чёрном фоне тёмной темы).
     "mysql_brand": "#6ea5c9",
     "mssql_brand": "#e0645f",
+    "pgsql_brand": "#5892c8",
     "alt_base": "#0d0d0d",
     "sql_keyword": "#60a5fa",
     "sql_string": "#6ee7a8",

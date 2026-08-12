@@ -31,6 +31,7 @@ from PySide6.QtCore import QObject, Signal
 from common.server_registry import (
     ENGINE_MSSQL,
     ENGINE_MYSQL,
+    ENGINE_PGSQL,
     ServerSpec,
     default_port,
 )
@@ -45,8 +46,14 @@ class _TestWorker(QObject):
     def run(self):
         from common.mssql_client import mssql
         from common.mysql_client import mysql
+        from common.pgsql_client import pgsql
 
-        client = mssql if self._engine == ENGINE_MSSQL else mysql
+        if self._engine == ENGINE_MSSQL:
+            client = mssql
+        elif self._engine == ENGINE_PGSQL:
+            client = pgsql
+        else:
+            client = mysql
         ok, message = client.test_connection(
             self._host,
             self._port,
@@ -138,6 +145,7 @@ class ServerDialog(QDialog):
         self.cb_engine = QComboBox()
         self.cb_engine.addItem("MySQL", ENGINE_MYSQL)
         self.cb_engine.addItem("MSSQL", ENGINE_MSSQL)
+        self.cb_engine.addItem("PostgreSQL", ENGINE_PGSQL)
         form.addRow("Движок:", self.cb_engine)
 
         self.sp_port = QSpinBox()

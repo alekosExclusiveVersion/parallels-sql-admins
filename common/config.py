@@ -43,6 +43,21 @@ class MSSQLConfig:
 
 
 @dataclass(frozen=True)
+class PgsqlConfig:
+    user: str
+    password: str
+    port: int
+    connect_timeout: int
+    retry: int
+    pool_idle: int
+    idle_timeout: int
+    max_idle_connections: int
+    max_connections: int
+    max_per_key: int
+    acquire_timeout: int
+
+
+@dataclass(frozen=True)
 class ParallelConfig:
     workers: int
     database_workers: int
@@ -112,6 +127,7 @@ class AdvancedConfig:
 class Config:
     mysql: MySQLConfig
     mssql: MSSQLConfig
+    pgsql: PgsqlConfig
     parallel: ParallelConfig
     sizes: SizesConfig
     filter: FilterConfig
@@ -206,6 +222,35 @@ def load_config(config_file: str | Path | None = None) -> Config:
             ),
             acquire_timeout=p.getint(
                 "mssql",
+                "acquire_timeout",
+                fallback=10,
+            ),
+        ),
+        pgsql=PgsqlConfig(
+            user=p.get("pgsql", "user", fallback="postgres"),
+            password=p.get("pgsql", "password", fallback=""),
+            port=p.getint("pgsql", "port", fallback=5432),
+            connect_timeout=p.getint("pgsql", "connect_timeout", fallback=5),
+            retry=p.getint("pgsql", "retry", fallback=3),
+            pool_idle=p.getint("pgsql", "pool_idle", fallback=4),
+            idle_timeout=p.getint("pgsql", "idle_timeout", fallback=60),
+            max_idle_connections=p.getint(
+                "pgsql",
+                "max_idle_connections",
+                fallback=16,
+            ),
+            max_connections=p.getint(
+                "pgsql",
+                "max_connections",
+                fallback=100,
+            ),
+            max_per_key=p.getint(
+                "pgsql",
+                "max_per_key",
+                fallback=4,
+            ),
+            acquire_timeout=p.getint(
+                "pgsql",
                 "acquire_timeout",
                 fallback=10,
             ),

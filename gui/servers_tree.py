@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from gui.icons import icon
 
-from common.server_registry import ENGINE_MSSQL, ENGINE_MYSQL
+from common.server_registry import ENGINE_MSSQL, ENGINE_MYSQL, ENGINE_PGSQL
 
 _PLACEHOLDER = "…"
 _LOADING = "Загрузка…"
@@ -42,6 +42,7 @@ _ENGINE_ROLE = Qt.UserRole + 2
 _ENGINE_ICON_COLORS = {
     ENGINE_MYSQL: "@mysql_brand",
     ENGINE_MSSQL: "@mssql_brand",
+    ENGINE_PGSQL: "@pgsql_brand",
 }
 
 
@@ -198,6 +199,8 @@ class ServersTree(QTreeWidget):
         engine = item.data(0, _ENGINE_ROLE)
         if engine == ENGINE_MSSQL:
             return "mssql"
+        if engine == ENGINE_PGSQL:
+            return "pgsql"
         if engine == ENGINE_MYSQL:
             return "mysql"
         return "server"

@@ -29,6 +29,7 @@ from common.config import config
 
 ENGINE_MYSQL = "mysql"
 ENGINE_MSSQL = "mssql"
+ENGINE_PGSQL = "pgsql"
 
 _SYSTEM_DBS = frozenset(
     ("information_schema", "performance_schema", "mysql", "sys",
@@ -63,6 +64,8 @@ class ServerSpec:
 def default_port(engine: str) -> int:
     if engine == ENGINE_MSSQL:
         return config.mssql.port
+    if engine == ENGINE_PGSQL:
+        return config.pgsql.port
     return config.mysql.port
 
 
@@ -148,7 +151,7 @@ class ServerRegistry:
                 if not spec.host:
                     continue
 
-                if spec.engine not in (ENGINE_MYSQL, ENGINE_MSSQL):
+                if spec.engine not in (ENGINE_MYSQL, ENGINE_MSSQL, ENGINE_PGSQL):
                     spec.engine = ENGINE_MYSQL
 
                 specs.append(spec)
@@ -252,6 +255,10 @@ class ServerRegistry:
             user = spec.user or config.mssql.user
             password = spec.password or config.mssql.password
             port = spec.port or config.mssql.port
+        elif spec.engine == ENGINE_PGSQL:
+            user = spec.user or config.pgsql.user
+            password = spec.password or config.pgsql.password
+            port = spec.port or config.pgsql.port
         else:
             user = spec.user or config.mysql.user
             password = spec.password or config.mysql.password
@@ -295,11 +302,16 @@ registry = ServerRegistry()
 
 
 def client_for(host: str):
-    """Возвращает клиент БД для сервера (MySQL или MSSQL)."""
+    """Возвращает клиент БД для сервера (MySQL, MSSQL или PostgreSQL)."""
     from common.mssql_client import mssql
 
     if registry.engine(host) == ENGINE_MSSQL:
         return mssql
+
+    from common.pgsql_client import pgsql
+
+    if registry.engine(host) == ENGINE_PGSQL:
+        return pgsql
 
     from common.mysql_client import mysql
 

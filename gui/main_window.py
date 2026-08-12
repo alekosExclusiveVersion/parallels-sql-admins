@@ -56,6 +56,7 @@ from gui.scripts_library import ScriptStore
 from gui.script_tab import ScriptTab
 from gui.scripts_manager_dialog import ScriptsManagerDialog
 from gui.server_dialog import ServerDialog
+from gui.connection_strings_dialog import ConnectionStringsDialog
 
 
 class MainWindow(QWidget):
@@ -423,6 +424,14 @@ class MainWindow(QWidget):
 
         logger.action(f"Server list refreshed ({previous} → {current})")
 
+    def _open_connection_strings(self):
+        """Открывает диалог импорта/экспорта строк подключения."""
+        dialog = ConnectionStringsDialog(self)
+
+        if dialog.exec() == ConnectionStringsDialog.Accepted:
+            self._load_servers()
+            logger.action("Connection strings dialog closed")
+
     # ----------------------------------------------------------
     # Check
     # ----------------------------------------------------------
@@ -608,6 +617,27 @@ class MainWindow(QWidget):
 
         buttons.addWidget(self.btn_refresh_servers)
         buttons.addWidget(self.btn_add_server)
+
+        self.btn_import_servers = QToolButton()
+        self.btn_import_servers.setObjectName("btn_icon")
+        self.btn_import_servers.setIcon(icon("upload", 16, "@icon_accent"))
+        self.btn_import_servers.setIconSize(QSize(16, 16))
+        self.btn_import_servers.setToolTip(
+            "Импорт серверов из строк подключения"
+        )
+        self.btn_import_servers.clicked.connect(self._open_connection_strings)
+
+        self.btn_export_servers = QToolButton()
+        self.btn_export_servers.setObjectName("btn_icon")
+        self.btn_export_servers.setIcon(icon("download", 16, "@icon_accent"))
+        self.btn_export_servers.setIconSize(QSize(16, 16))
+        self.btn_export_servers.setToolTip(
+            "Экспорт серверов в строки подключения"
+        )
+        self.btn_export_servers.clicked.connect(self._open_connection_strings)
+
+        buttons.addWidget(self.btn_import_servers)
+        buttons.addWidget(self.btn_export_servers)
         buttons.addWidget(self.btn_select_all)
         buttons.addWidget(self.btn_clear)
         buttons.addWidget(self.btn_invert)
@@ -1896,7 +1926,7 @@ class MainWindow(QWidget):
             "light": "light_mode",
             "dark": "dark_mode",
         }[mode]
-        self.btn_theme.setIcon(icon(mode_icon, 16, "#f8fafc"))
+        self.btn_theme.setIcon(icon(mode_icon, 16, "@icon_fg"))
         self.btn_theme.setToolTip(
             f"Тема: {theme} ({mode})\nАвто — следовать за системой"
         )
@@ -1904,6 +1934,8 @@ class MainWindow(QWidget):
     def _refresh_icons(self):
         self.btn_refresh_servers.setIcon(icon("refresh", 16, "@icon_accent"))
         self.btn_add_server.setIcon(icon("add", 16, "@icon_accent"))
+        self.btn_import_servers.setIcon(icon("upload", 16, "@icon_accent"))
+        self.btn_export_servers.setIcon(icon("download", 16, "@icon_accent"))
         self.btn_select_all.setIcon(icon("done_all"))
         self.btn_clear.setIcon(icon("close"))
         self.btn_invert.setIcon(icon("swap_horiz"))
@@ -1947,6 +1979,14 @@ class MainWindow(QWidget):
         )
         act_refresh_servers.triggered.connect(self._refresh_servers)
         act_refresh_servers.setShortcut("Ctrl+R")
+
+        menu_file.addSeparator()
+
+        act_connection_strings = menu_file.addAction(
+            icon("swap_horiz"), "Строки подключения…"
+        )
+        act_connection_strings.triggered.connect(self._open_connection_strings)
+        act_connection_strings.setShortcut("Ctrl+Shift+I")
 
         menu_file.addSeparator()
 
