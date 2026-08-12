@@ -67,6 +67,10 @@ class MSSQLClient:
             acquire_timeout=self.cfg.acquire_timeout,
             name="mssql",
         )
+        # pymssql.Connection — C-расширение без __dict__: атрибуты
+        # (host/db/spid) нельзя присваивать объекту, храним их по id(conn).
+        self._meta: dict[int, dict] = {}
+        self._meta_lock = threading.Lock()
         atexit.register(self.close_all)
 
     # ----------------------------------------------------------
@@ -106,9 +110,7 @@ class MSSQLClient:
                 f"Не удалось подключиться к {host}: {last_error}"
             )
 
-        conn._psql_host = host
-        conn._psql_db = database
-        conn._psql_spid = None
+        self._meta_set(conn, host=host, db=database, spid=None)
 
         try:
             conn.autocommit(True)
@@ -120,7 +122,9 @@ class MSSQLClient:
                 cur.execute("SELECT @@SPID AS spid")
                 row = cur.fetchone()
                 if row:
-                    conn._psql_spid = int(row.get("spid") or 0) or None
+                    self._meta_set(
+                        conn, spid=int(row.get("spid") or 0) or None
+                    )
         except Exception:
             pass
 
@@ -130,7 +134,21 @@ class MSSQLClient:
         """Снимок пула для тестов."""
         return self._pool.debug_state()
 
+    def _meta_set(self, conn, **kwargs: Any) -> None:
+        with self._meta_lock:
+            self._meta.setdefault(id(conn), {}).update(kwargs)
+
+    def _meta_get(self, conn, key: str, default: Any = None) -> Any:
+        with self._meta_lock:
+            return self._meta.get(id(conn), {}).get(key, default)
+
+    def _meta_clear(self, conn) -> None:
+        with self._meta_lock:
+            self._meta.pop(id(conn), None)
+
     def close_all(self) -> None:
+        with self._meta_lock:
+            self._meta.clear()
         self._pool.close_all()
 
     @contextmanager
@@ -155,8 +173,8 @@ class MSSQLClient:
             if not getattr(conn, "closed", False):
                 raise
 
-            host = getattr(conn, "_psql_host", None)
-            database = getattr(conn, "_psql_db", None)
+            host = self._meta_get(conn, "host")
+            database = self._meta_get(conn, "db")
 
             if not host:
                 raise
@@ -321,7 +339,7 @@ GROUP BY database_id
 
     def connection_id(self, conn) -> int | None:
         """SPID соединения для прерывания активного запроса."""
-        return getattr(conn, "_psql_spid", None)
+        return self._meta_get(conn, "spid")
 
     def test_connection(
         self,
