@@ -618,26 +618,16 @@ class MainWindow(QWidget):
         buttons.addWidget(self.btn_refresh_servers)
         buttons.addWidget(self.btn_add_server)
 
-        self.btn_import_servers = QToolButton()
-        self.btn_import_servers.setObjectName("btn_icon")
-        self.btn_import_servers.setIcon(icon("upload", 16, "@icon_accent"))
-        self.btn_import_servers.setIconSize(QSize(16, 16))
-        self.btn_import_servers.setToolTip(
-            "Импорт серверов из строк подключения"
+        self.btn_connection_strings = QToolButton()
+        self.btn_connection_strings.setObjectName("btn_icon")
+        self.btn_connection_strings.setIcon(icon("swap_vert", 16, "@icon_accent"))
+        self.btn_connection_strings.setIconSize(QSize(16, 16))
+        self.btn_connection_strings.setToolTip(
+            "Импорт/экспорт строк подключения"
         )
-        self.btn_import_servers.clicked.connect(self._open_connection_strings)
+        self.btn_connection_strings.clicked.connect(self._open_connection_strings)
 
-        self.btn_export_servers = QToolButton()
-        self.btn_export_servers.setObjectName("btn_icon")
-        self.btn_export_servers.setIcon(icon("download", 16, "@icon_accent"))
-        self.btn_export_servers.setIconSize(QSize(16, 16))
-        self.btn_export_servers.setToolTip(
-            "Экспорт серверов в строки подключения"
-        )
-        self.btn_export_servers.clicked.connect(self._open_connection_strings)
-
-        buttons.addWidget(self.btn_import_servers)
-        buttons.addWidget(self.btn_export_servers)
+        buttons.addWidget(self.btn_connection_strings)
         buttons.addWidget(self.btn_select_all)
         buttons.addWidget(self.btn_clear)
         buttons.addWidget(self.btn_invert)
@@ -1934,8 +1924,7 @@ class MainWindow(QWidget):
     def _refresh_icons(self):
         self.btn_refresh_servers.setIcon(icon("refresh", 16, "@icon_accent"))
         self.btn_add_server.setIcon(icon("add", 16, "@icon_accent"))
-        self.btn_import_servers.setIcon(icon("upload", 16, "@icon_accent"))
-        self.btn_export_servers.setIcon(icon("download", 16, "@icon_accent"))
+        self.btn_connection_strings.setIcon(icon("swap_vert", 16, "@icon_accent"))
         self.btn_select_all.setIcon(icon("done_all"))
         self.btn_clear.setIcon(icon("close"))
         self.btn_invert.setIcon(icon("swap_horiz"))
@@ -1983,7 +1972,7 @@ class MainWindow(QWidget):
         menu_file.addSeparator()
 
         act_connection_strings = menu_file.addAction(
-            icon("swap_horiz"), "Строки подключения…"
+            icon("swap_vert"), "Строки подключения…"
         )
         act_connection_strings.triggered.connect(self._open_connection_strings)
         act_connection_strings.setShortcut("Ctrl+Shift+I")
