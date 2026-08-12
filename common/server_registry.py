@@ -319,9 +319,15 @@ def client_for(host: str):
 
 
 def quote_ident(engine: str, name: str) -> str:
-    """Экранирование идентификатора для конкретной СУБД."""
+    """Экранирование идентификатора для конкретной СУБД.
+
+    MySQL — обратные кавычки, MSSQL — квадратные скобки,
+    PostgreSQL — двойные кавычки.
+    """
     if engine == ENGINE_MSSQL:
         return f"[{name.replace(']', ']]')}]"
+    if engine == ENGINE_PGSQL:
+        return f'"{name.replace(chr(34), chr(34) * 2)}"'
     return f"`{name.replace('`', '``')}`"
 
 
@@ -331,10 +337,31 @@ def build_select_sql(engine: str, database: str, table: str, limit: int = 1000) 
         parts = [quote_ident(engine, database)]
 
         # MSSQL-таблица может быть вида "schema.table".
-        for part in table.split("."):
-            parts.append(quote_ident(engine, part.strip()))
+        # Если схема не указана — подставляем dbo: [db].[dbo].[table],
+        # иначе [db].[Users] интерпретируется как [db].[схема] и падает
+        # с "Invalid object name".
+        table_parts = [p.strip() for p in table.split(".") if p.strip()]
+        if len(table_parts) == 1:
+            table_parts = ["dbo"] + table_parts
+
+        for part in table_parts:
+            parts.append(quote_ident(engine, part))
 
         return f"SELECT TOP {int(limit)} * FROM {'.'.join(parts)}"
+
+    if engine == ENGINE_PGSQL:
+        # PostgreSQL: без схемы — public (аналогично MSSQL dbo).
+        # Иначе "db"."table" интерпретируется как "схема"."таблица",
+        # и запрос падает с "relation ... does not exist".
+        table_parts = [p.strip() for p in table.split(".") if p.strip()]
+        if len(table_parts) == 1:
+            table_parts = ["public"] + table_parts
+
+        table_ref = ".".join(quote_ident(engine, p) for p in table_parts)
+        return (
+            f"SELECT * FROM {quote_ident(engine, database)}.{table_ref} "
+            f"LIMIT {int(limit)}"
+        )
 
     return (
         f"SELECT * FROM {quote_ident(engine, database)}.{quote_ident(engine, table)} "

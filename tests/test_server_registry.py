@@ -15,6 +15,7 @@ from unittest.mock import patch
 from common.server_registry import (
     ENGINE_MSSQL,
     ENGINE_MYSQL,
+    ENGINE_PGSQL,
     ServerSpec,
     build_select_sql,
     default_port,
@@ -259,22 +260,56 @@ class TestServerRegistrySql(ServerRegistryTestBase):
     def test_quote_ident_mssql(self):
         self.assertEqual(quote_ident(ENGINE_MSSQL, "MyDB"), "[MyDB]")
 
+    def test_quote_ident_pgsql(self):
+        self.assertEqual(quote_ident(ENGINE_PGSQL, "users"), '"users"')
+        self.assertEqual(
+            quote_ident(ENGINE_PGSQL, 'weird"name'),
+            '"weird""name"',
+        )
+
     def test_build_select_mysql(self):
         sql = build_select_sql(ENGINE_MYSQL, "ar_ru", "users", 1000)
         self.assertEqual(sql, "SELECT * FROM `ar_ru`.`users` LIMIT 1000")
 
     def test_build_select_mssql(self):
+        # Таблица без схемы → подставляется dbo: [db].[dbo].[table],
+        # иначе [db].[users] интерпретируется как [db].[схема] и падает
+        # с "Invalid object name".
         sql = build_select_sql(ENGINE_MSSQL, "MyDB", "users", 500)
         self.assertEqual(
             sql,
-            "SELECT TOP 500 * FROM [MyDB].[users]",
+            "SELECT TOP 500 * FROM [MyDB].[dbo].[users]",
         )
 
     def test_build_select_mssql_with_schema(self):
-        sql = build_select_sql(ENGINE_MSSQL, "MyDB", "dbo.users", 100)
+        sql = build_select_sql(ENGINE_MSSQL, "MyDB", "sales.Orders", 100)
         self.assertEqual(
             sql,
-            "SELECT TOP 100 * FROM [MyDB].[dbo].[users]",
+            "SELECT TOP 100 * FROM [MyDB].[sales].[Orders]",
+        )
+
+    def test_build_select_mssql_escaped_bracket(self):
+        sql = build_select_sql(ENGINE_MSSQL, "MyDB", "weird]name", 10)
+        self.assertEqual(
+            sql,
+            "SELECT TOP 10 * FROM [MyDB].[dbo].[weird]]name]",
+        )
+
+    def test_build_select_pgsql(self):
+        # Без схемы → public: "db"."public"."table", иначе "db"."table"
+        # интерпретируется как "схема"."таблица" и падает
+        # с "relation ... does not exist".
+        sql = build_select_sql(ENGINE_PGSQL, "mydb", "users", 1000)
+        self.assertEqual(
+            sql,
+            'SELECT * FROM "mydb"."public"."users" LIMIT 1000',
+        )
+
+    def test_build_select_pgsql_with_schema(self):
+        sql = build_select_sql(ENGINE_PGSQL, "mydb", "sales.Orders", 100)
+        self.assertEqual(
+            sql,
+            'SELECT * FROM "mydb"."sales"."Orders" LIMIT 100',
         )
 
 
