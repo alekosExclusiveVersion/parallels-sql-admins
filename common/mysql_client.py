@@ -320,6 +320,12 @@ class MySQLClient:
         поэтому маска экранируется через conn.escape() и подставляется
         вручную. Никаких дополнительных фильтров (prefix/regex/ignore)
         не применяется — маску задаёт пользователь явно.
+
+        Если маска похожа на домен (содержит точку), дополнительно ищет
+        БД через Plesk `psa`: связку data_bases.dom_id -> domains.name.
+        Запрос выполняется на том же соединении, что и SHOW DATABASES,
+        поэтому новых коннектов не открывается. При недоступности psa
+        поиск тихо откатывается к результатам по имени БД.
         """
         mask = mask.strip()
 
@@ -334,10 +340,58 @@ class MySQLClient:
                 f"SHOW DATABASES LIKE {escaped}",
             )
 
+            found = [
+                db
+                for row in rows
+                for db in row.values()
+            ]
+
+            if "." in mask:
+                found.extend(
+                    self._search_databases_by_domain_conn(conn, mask)
+                )
+
+        seen: set[str] = set()
+        return [db for db in found if not (db in seen or seen.add(db))]
+
+    def _search_databases_by_domain_conn(
+        self,
+        conn,
+        mask: str,
+    ) -> list[str]:
+        """Ищет БД по домену/адресу сайта через Plesk psa.
+
+        Возвращает имена БД, чей домен (psa.domains.name) совпадает
+        с маской. Выполняется на переданном соединении; при отсутствии
+        доступа к psa логирует предупреждение и возвращает пустой список.
+        """
+        pattern = mask
+
+        if "%" not in pattern:
+            pattern = f"%{pattern}%"
+
+        escaped = conn.escape(pattern)
+
+        try:
+            rows = self.execute_on_connection(
+                conn,
+                "SELECT db.name AS db_name "
+                "FROM psa.data_bases db "
+                "JOIN psa.domains d ON d.id = db.dom_id "
+                "WHERE db.type = 'mysql' "
+                f"AND d.name LIKE {escaped}",
+            )
+        except Exception as ex:
+            logger.warning(
+                f"{getattr(conn, 'host', '?')}: поиск по домену "
+                f"недоступен (psa) — {ex}"
+            )
+            return []
+
         return [
-            db
+            row["db_name"]
             for row in rows
-            for db in row.values()
+            if row.get("db_name")
         ]
 
     def has_cfg_settings_conn(self, conn, database: str) -> bool:

@@ -319,7 +319,7 @@ class SqlConsolePanel(QWidget):
 
         self.ed_search_mask = QLineEdit()
         self.ed_search_mask.setObjectName("SearchField")
-        self.ed_search_mask.setPlaceholderText("Маска имени БД…")
+        self.ed_search_mask.setPlaceholderText("Маска БД или домен сайта…")
         self.ed_search_mask.setClearButtonEnabled(True)
         self.ed_search_mask.setFixedHeight(28)
         self.ed_search_mask.setMaximumWidth(280)
@@ -331,8 +331,10 @@ class SqlConsolePanel(QWidget):
         toolbar.addWidget(
             HelpIcon(
                 "Поиск БД по маске имени (% вводить не нужно — "
-                "ищется как %текст%). Двойной клик по строке результата "
-                "подставит сервер и БД в консоль."
+                "ищется как %текст%). Маска с точкой дополнительно "
+                "ищется по домену/адресу сайта (через Plesk psa). "
+                "Двойной клик по строке результата подставит сервер "
+                "и БД в консоль."
             )
         )
 
