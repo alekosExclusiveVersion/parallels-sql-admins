@@ -14,7 +14,8 @@ from __future__ import annotations
 import csv
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QBrush
+from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QRectF
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -27,7 +28,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
 )
 
-from gui.styles import ERROR_BG, STATUS_COLORS
+from gui.styles import ERROR_BG, STATUS_COLORS, color as theme_color
 from gui.widgets.filter_header import FilterHeaderRow
 
 CHECK_HEADERS = [
@@ -41,11 +42,60 @@ CHECK_HEADERS = [
 ]
 
 CHECK_HEADER_WIDTHS = {
-    0: 64,
-    1: 190,
-    2: 160,
-    4: 180,
+     0: 64,
+     1: 190,
+     2: 160,
+     4: 180,
 }
+
+
+class RoundedHeader(QHeaderView):
+    """Горизонтальная шапка Results со скруглёнными верхними углами.
+
+    QSS border-radius не срезает фон QHeaderView, а ::section:last не матчится
+    для растянутой последней секции (stretchLastSection). Вместо этого поверх
+    верхних углов viewport рисуется антиалиасинговый «клин» в цвет фона таблицы:
+    серые углы шапки плавно срезаются, без ступенчатых артефактов маски.
+    """
+
+    radius = 8
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        vp = self.viewport()
+        if vp is None:
+            return
+        bg = self.parentWidget().palette().window().color()
+        r = vp.rect()
+        rad = min(self.radius, r.width() // 2, r.height() // 2)
+        p = QPainter(vp)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        p.setBrush(bg)
+        c = 0.5522847498 * rad
+        path = QPainterPath()
+        path.moveTo(0, 0)
+        path.lineTo(0, rad)
+        path.cubicTo(0, rad - c, rad - c, 0, rad, 0)
+        path.closeSubpath()
+        path.moveTo(r.width(), 0)
+        path.lineTo(r.width() - rad, 0)
+        path.cubicTo(r.width() - rad + c, 0, r.width(), rad - c, r.width(), rad)
+        path.lineTo(r.width(), 0)
+        path.closeSubpath()
+        p.drawPath(path)
+        # Клин закрывает белым и внутреннюю часть дуги QSS-контура таблицы
+        # (дуга описана вокруг угла таблицы, а клин — вокруг угла viewport,
+        # он на 1px внутри). Дорисовываем дугу границы поверх клина, чтобы
+        # контур в углах не прерывался.
+        if rad >= 2:
+            stroke_r = rad - 0.5
+            cy = rad - 1.0
+            p.setBrush(Qt.NoBrush)
+            p.setPen(QPen(QColor(theme_color("border")), 1.0))
+            p.drawArc(QRectF(rad - 1.0 - stroke_r, cy - stroke_r, 2 * stroke_r, 2 * stroke_r), 90 * 16, 90 * 16)
+            p.drawArc(QRectF(r.width() - rad + 1.0 - stroke_r, cy - stroke_r, 2 * stroke_r, 2 * stroke_r), 0 * 16, 90 * 16)
+        p.end()
 
 
 class ResultTable(QTableWidget):
@@ -55,9 +105,12 @@ class ResultTable(QTableWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("ResultTable")
+
+        self._rounded_header = RoundedHeader(Qt.Horizontal)
+        self.setHorizontalHeader(self._rounded_header)
 
         self.filter_header = FilterHeaderRow(self)
-        self.filter_header.setObjectName("FilterHeaderRow")
 
         self._search_edit: QLineEdit | None = None
         self._only_errors: QCheckBox | None = None

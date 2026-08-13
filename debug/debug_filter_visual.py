@@ -16,6 +16,10 @@ from PySide6.QtWidgets import QApplication
 
 from gui.main_window import MainWindow
 
+# Не ходим в сеть: авто-обновление списка БД при старте выключено,
+# иначе рендер ждёт таймаутов подключения.
+MainWindow._sql_refresh_databases = lambda self: None  # type: ignore
+
 OUT = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "docs", "screenshots", "filter_visual.png",
@@ -30,9 +34,10 @@ def main():
     window.show()
 
     # Заполняем таблицу данными как при Check
-    window.clear_results()
-    window._results_source = "check"
-    window._update_only_errors_visibility()
+    table = window.table
+    table.clear_results()
+    table.results_source = "check"
+    table._update_only_errors_visibility()
 
     rows = [
         ["Check", "srv1.ru", "db_alpha", "RU", "10", "OK", "all good"],
@@ -41,13 +46,13 @@ def main():
         ["Check", "srv2.ru", "db_delta", "FR", "40", "OK", "ok"],
     ]
     for r in rows:
-        window._add_table_row(r, status_col=5)
+        table.add_row(r, status_col=5)
 
-    window._sync_filter_columns()
-    window._filter_results()
+    table.sync_filter_columns()
+    table.apply_filters()
 
     # Заполняем пример фильтра для наглядности
-    window.filter_header._edits[1].setText("srv")
+    table.filter_header._edits[1].setText("srv")
 
     app.processEvents()
 

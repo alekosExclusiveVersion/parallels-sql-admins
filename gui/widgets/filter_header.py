@@ -1,18 +1,21 @@
 """
 gui/widgets/filter_header.py
 
-Sibling-строка поколоночных фильтров для Results.
+Строка поколоночных фильтров для Results, закреплённая под шапкой.
 
-Overlay НЕ является дочерним виджетом таблицы: ResultTable размещает его
-в общем QVBoxLayout-контейнере (overlay сверху, таблица снизу). Так поля
-фильтров не перекрывают первую строку данных — QTableView игнорирует
-setViewportMargins для строк (rowViewportPosition(0) остаётся 0), поэтому
-вложенный overlay визуально прятал первую строку под полосой фильтров.
+Поля фильтров — дочерние виджеты viewport горизонтальной шапки
+(QHeaderView), а сама шапка увеличивается на высоту полосы фильтров.
+QTableView игнорирует setViewportMargins для строк (rowViewportPosition(0)
+остаётся 0), поэтому вложенный в viewport таблицы оверлей визуально прятал
+первую строку данных — поля живут в шапке, а данные начинаются строго под ней,
+и первая строка всегда видна целиком.
 
-Поля выравниваются по секциям QHeaderView через mapTo в координаты overlay,
-вертикальная прокрутка их не двигает, горизонтальная двигает вместе с
-колонками. Жизненный цикл защищён shiboken6.isValid(): синхронизация после
-уничтожения таблицы не вызывает RuntimeError (C++ object already deleted).
+Подписи колонок принудительно якорим к верху секции (AlignTop): по умолчанию
+QHeaderView центрирует текст (AlignCenter), и в увеличенной шапке он залез бы
+на поля фильтров. Поля выравниваются по секциям через sectionViewportPosition
+(учитывает горизонтальную прокрутку), вертикальная прокрутка на них не влияет.
+Жизненный цикл защищён shiboken6.isValid(): синхронизация после уничтожения
+таблицы не вызывает RuntimeError (C++ object already deleted).
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ except ImportError:  # pragma: no cover
 
 
 class FilterHeaderRow(QWidget):
-    """Sibling-строка поколоночных фильтров над таблицей."""
+    """Менеджер поколоночных фильтров, закреплённых под шапкой таблицы."""
 
     filterChanged = Signal()
 
@@ -37,15 +40,11 @@ class FilterHeaderRow(QWidget):
         self._table: QTableWidget | None = None
         self._edits: list[QLineEdit] = []
         self._row_height = 24
-        self.setFixedHeight(self._row_height)
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet(
-            "FilterHeaderRow { background: palette(base); }"
-        )
+        self._label_h = 0
         self.hide()
 
     def bind(self, table: QTableWidget) -> None:
-        """Подключает overlay к таблице и геометрические сигналы."""
+        """Подключает фильтры к таблице и геометрические сигналы."""
         if table is None:
             return
         self._table = table
@@ -57,16 +56,9 @@ class FilterHeaderRow(QWidget):
         table.horizontalScrollBar().valueChanged.connect(
             self._schedule_sync
         )
-        table.verticalScrollBar().valueChanged.connect(
-            self._schedule_sync
-        )
         table.installEventFilter(self)
-        table.viewport().installEventFilter(self)
         header.installEventFilter(self)
 
-        # Резервируем место под фильтры между шапкой и данными. Overlay
-        # остаётся дочерним таблицы, поэтому vertical scrollbar его не двигает.
-        table.setViewportMargins(0, self._row_height, 0, 0)
         self._sync_geometry()
 
     def rebuild(self, columns: list[str]) -> None:
@@ -75,23 +67,29 @@ class FilterHeaderRow(QWidget):
             edit.deleteLater()
         self._edits = []
 
-        if not columns:
-            self.hide()
+        table = self._table
+        if table is None or not isValid(table):
+            return
+
+        header = table.horizontalHeader()
+        header_viewport = header.viewport()
+        if not columns or not isValid(header_viewport):
+            self._restore_header_height(header)
             self._sync_geometry()
             return
 
         for column in columns:
-            edit = QLineEdit(self)
+            edit = QLineEdit(header_viewport)
+            edit.setObjectName("ColumnFilter")
             edit.setFixedHeight(self._row_height)
             edit.setPlaceholderText("…")
             edit.setClearButtonEnabled(True)
             edit.setToolTip(f"Фильтр по колонке «{column}»")
             edit.setMinimumWidth(40)
             edit.textChanged.connect(self._on_text_changed)
+            edit.hide()
             self._edits.append(edit)
 
-        self.show()
-        self.raise_()
         self._sync_geometry()
 
     def get_filters(self) -> list[str]:
@@ -112,6 +110,27 @@ class FilterHeaderRow(QWidget):
     def _schedule_sync(self, *args) -> None:
         self._sync_geometry()
 
+    def _ensure_header_space(self, header) -> bool:
+        """Увеличивает шапку на высоту фильтров после реальной раскладки."""
+        if self._label_h:
+            return True
+        # Натуральная высота шапки доступна только после раскладки с секциями.
+        if not header.count() or header.height() <= 0:
+            return False
+        self._label_h = header.height()
+        # Подписи по умолчанию центрируются, а в увеличенной шапке текст
+        # залез бы на фильтры — якорим текст к верху секции.
+        header.setDefaultAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        header.setFixedHeight(self._label_h + self._row_height)
+        return True
+
+    def _restore_header_height(self, header) -> None:
+        """Возвращает шапке натуральную высоту, если колонок больше нет."""
+        if not self._label_h:
+            return
+        header.setFixedHeight(self._label_h)
+        self._label_h = 0
+
     def _sync_geometry(self) -> None:
         """Привязывает поля к текущей геометрии секций QHeaderView."""
         table = self._table
@@ -123,42 +142,20 @@ class FilterHeaderRow(QWidget):
         if not isValid(header) or not isValid(header_viewport):
             return
 
-        container = self.parentWidget()
-        if container is None or not isValid(container):
+        if not self._ensure_header_space(header):
             return
 
-        # Общая ширина — как у viewport таблицы (без вертикального скроллбара),
-        # поля не вылезают под скроллбар.
-        self.setFixedWidth(table.viewport().width())
-
-        # Overlay и таблица — sibling'и в общем контейнере.
-        # Используем mapFrom для получения координат viewport в системе координат overlay.
-        # table.viewport() — дочерний элемент table, который является sibling'ом overlay.
-        my_origin = self.mapFrom(container, container.rect().topLeft())
-        h_origin = table.viewport().mapTo(
-            container, table.viewport().rect().topLeft()
-        )
-        x_base = h_origin.x() - my_origin.x()
-
-        # Правый край viewport в координатах overlay — для скрытия полей,
-        # вылезающих под вертикальный скроллбар.
-        vp_right = (
-            table.viewport().mapTo(container, table.viewport().rect().topRight()).x()
-            - my_origin.x()
-        )
-
-        visible_left = x_base
-        visible_right = vp_right
+        visible_width = header_viewport.width()
         for logical_index, edit in enumerate(self._edits):
             if logical_index >= header.count():
                 edit.hide()
                 continue
 
-            x = x_base + header.sectionViewportPosition(logical_index)
+            x = header.sectionViewportPosition(logical_index)
             width = header.sectionSize(logical_index)
-            edit.setGeometry(x, 0, width, self._row_height)
+            edit.setGeometry(x, self._label_h, width, self._row_height)
             edit.setVisible(
-                width > 0 and x < visible_right and x + width > visible_left
+                width > 0 and x < visible_width and x + width > 0
             )
 
     def eventFilter(self, watched: QWidget, event: QEvent) -> bool:

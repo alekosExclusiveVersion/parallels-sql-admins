@@ -539,6 +539,14 @@ QTableWidget{
     border-radius:0;
 }
 
+QLineEdit#ColumnFilter{
+    border-radius:0;
+    padding:2px 4px;
+    border:1px solid {header_border};
+    border-top:none;
+    border-left:none;
+}
+
 QTreeWidget::item{
     padding:4px 6px;
     border-radius:6px;
@@ -882,6 +890,13 @@ QHeaderView::section{
     font-size:12px;
     font-weight:700;
     color:{header_text};
+}
+
+/* Верхние углы Results скругляются: контур — этим правилом (QSS-radius),
+   серые углы шапки — клином из RoundedHeader (result_table.py). */
+QTableWidget#ResultTable{
+    border-top-left-radius:8px;
+    border-top-right-radius:8px;
 }
 
 /* --- Tabs --- */
