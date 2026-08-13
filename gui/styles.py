@@ -1122,6 +1122,20 @@ def save_mode(mode: str) -> None:
     settings.sync()
 
 
+def load_security_backend() -> str:
+    """Предпочтительный тип ключа для нового хранилища (раздел
+    «Конфиденциальность» в настройках): master_password | file_key."""
+    settings = _settings()
+    value = str(settings.value("security/backend", "master_password"))
+    return value if value in ("master_password", "file_key") else "master_password"
+
+
+def save_security_backend(kind: str) -> None:
+    settings = _settings()
+    settings.setValue("security/backend", kind)
+    settings.sync()
+
+
 def bootstrap() -> str:
     """Инициализирует режим и тему из сохранённых значений.
 

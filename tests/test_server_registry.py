@@ -1,18 +1,26 @@
 """
 tests/test_server_registry.py
 
-Тесты реестра серверов: хранение/загрузка с шифрованием пароля,
-миграция из servers.txt, резолв реквизитов по хосту, CRUD,
-построение SELECT с учётом синтаксиса СУБД.
+Тесты реестра серверов: хранение/загрузка с шифрованием пароля в обоих
+режимах защиты ключа (master_password / file_key), блокировка записи,
+миграция из servers.txt, legacy-плоский формат, рееncryption (rekey),
+резолв реквизитов по хосту, CRUD, построение SELECT с учётом синтаксиса СУБД.
 """
 
-import os
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from common.key_store import (
+    BACKEND_FILE_KEY,
+    BACKEND_MASTER_PASSWORD,
+    VaultError,
+    VaultLockedError,
+    WrongMasterPasswordError,
+)
 from common.server_registry import (
     ENGINE_MSSQL,
     ENGINE_MYSQL,
@@ -23,6 +31,7 @@ from common.server_registry import (
     quote_ident,
     registry,
 )
+import common.server_registry as sreg
 
 
 def fake_config(**overrides) -> SimpleNamespace:
@@ -37,8 +46,8 @@ def fake_config(**overrides) -> SimpleNamespace:
         port=1433,
     )
     security = SimpleNamespace(
-        key_backend=overrides.get("key_backend", "file"),
         backup_count=overrides.get("backup_count", 5),
+        kdf_iterations=overrides.get("kdf_iterations", 1000),
     )
     advanced = SimpleNamespace(
         servers_file=str(overrides.get("servers_file", "servers.json")),
@@ -51,32 +60,13 @@ class ServerRegistryTestBase(unittest.TestCase):
         self._tmp = Path(tempfile.mkdtemp())
         registry.servers_file = self._tmp / "servers.json"
         registry.key_file = self._tmp / "servers.key"
-        registry._fernet = None
+        registry.vault.lock()
         registry._loaded = False
         registry._specs = []
         registry.backups_dir = self._tmp / "backups"
 
-        # Включаем тестовый режим через переменную окружения (разрешает файловый backend)
-        os.environ["PARALLELS_SQL_ADMIN_TESTING"] = "1"
-
-        # Настройка config.security для использования файлового backend
-        from common import config as config_module
-        from types import SimpleNamespace
-        config_module.config = config_module.Config(
-            mysql=config_module.config.mysql,
-            mssql=config_module.config.mssql,
-            pgsql=config_module.config.pgsql,
-            parallel=config_module.config.parallel,
-            sizes=config_module.config.sizes,
-            filter=config_module.config.filter,
-            logging=config_module.config.logging,
-            output=config_module.config.output,
-            advanced=config_module.config.advanced,
-            security=SimpleNamespace(
-                key_backend="file",
-                backup_count=5,
-            ),
-        )
+        sreg.config = fake_config()
+        registry.setup_vault(BACKEND_FILE_KEY)
 
     def _save(self, specs):
         registry.save(specs)
@@ -116,28 +106,33 @@ class TestServerRegistryPersistence(ServerRegistryTestBase):
         raw = registry.servers_file.read_text(encoding="utf-8")
         self.assertNotIn("topsecret", raw)
         self.assertIn("password", raw)
+        self.assertIn("meta", raw)
 
-    def test_missing_key_generates_and_round_trips(self):
-        # В новой версии ключ хранится в key_store (file или Keychain)
-        # Проверяем, что ключ загружается и пароль расшифровывается
-        from common.key_store import delete_key
-        delete_key()  # Удаляем ключ перед тестом
-
+    def test_file_key_round_trip_across_sessions(self):
+        # Ключ живёт в servers.key; при «новой сессии» (vault сброшен)
+        # он перечитывается из файла и пароль расшифровывается.
         self._save([ServerSpec(host="h1", user="u", password="pw")])
-        spec = self._reload()[0]
+
+        registry.vault.lock()
+        registry._loaded = False
+        spec = registry.load()[0]
         self.assertEqual(spec.password, "pw")
+        self.assertTrue(registry.key_file.exists())
 
-    def test_corrupt_password_returns_empty(self):
+    def test_corrupt_file_key_not_regenerated(self):
+        # Повреждённый ключ — ошибка, а не новая генерация (защита от
+        # молчаливой потери паролей).
         self._save([ServerSpec(host="h1", user="u", password="pw")])
-        registry._fernet = None
 
-        # Перезаписываем файл ключа мусором
-        from common.key_store import delete_key, _store_key_to_file
-        delete_key()
-        _store_key_to_file(b"garbage-not-a-key", Path("servers.key"))
+        garbage = b"garbage-not-a-key"
+        registry.key_file.write_bytes(garbage)
+        registry.vault.lock()
+        registry._loaded = False
 
-        spec = self._reload()[0]
-        self.assertEqual(spec.password, "")
+        with self.assertRaises(VaultError):
+            registry.load()
+
+        self.assertEqual(registry.key_file.read_bytes(), garbage)
 
     def test_default_port_by_engine(self):
         self.assertEqual(default_port(ENGINE_MYSQL), 3306)
@@ -156,6 +151,104 @@ class TestServerRegistryPersistence(ServerRegistryTestBase):
             ServerSpec(host="h1", name="Prod").ui_label(),
             "Prod",
         )
+
+
+class TestMasterPassword(ServerRegistryTestBase):
+
+    def setUp(self):
+        super().setUp()
+        registry.vault.lock()
+        registry.setup_vault(BACKEND_MASTER_PASSWORD, "secret")
+
+    def test_round_trip(self):
+        self._save([ServerSpec(host="h", user="u", password="pw")])
+        self.assertEqual(registry.find("h").password, "pw")
+
+    def test_master_password_not_stored(self):
+        self._save([ServerSpec(host="h", user="u", password="pw")])
+        raw = registry.servers_file.read_text(encoding="utf-8")
+        self.assertNotIn("secret", raw)
+        self.assertNotIn("pw", raw)
+
+    def test_wrong_password_raises(self):
+        self._save([ServerSpec(host="h", user="u", password="pw")])
+        registry.vault.lock()
+        with self.assertRaises(WrongMasterPasswordError):
+            registry.unlock_master("wrong")
+
+    def test_needs_unlock_when_locked(self):
+        self._save([ServerSpec(host="h", user="u", password="pw")])
+        registry.vault.lock()
+        self.assertTrue(registry.needs_unlock())
+
+    def test_load_blocked_when_locked(self):
+        self._save([ServerSpec(host="h", user="u", password="pw")])
+        registry.vault.lock()
+        registry._loaded = False
+        with self.assertRaises(VaultLockedError):
+            registry.load()
+
+    def test_save_blocked_when_locked(self):
+        # Защита от записи «пустых» паролей поверх нерасшифрованных данных.
+        self._save([ServerSpec(host="h", user="u", password="pw")])
+        registry.vault.lock()
+        with self.assertRaises(VaultLockedError):
+            registry.save([
+                ServerSpec(host="h", user="u", password=""),
+            ])
+
+
+class TestRekey(ServerRegistryTestBase):
+
+    def setUp(self):
+        super().setUp()
+        registry.setup_vault(BACKEND_FILE_KEY)
+
+    def test_file_to_master(self):
+        self._save([ServerSpec(host="h", user="u", password="pw")])
+
+        registry.rekey(BACKEND_MASTER_PASSWORD, "newpass")
+
+        raw = json.loads(registry.servers_file.read_text(encoding="utf-8"))
+        self.assertEqual(raw["meta"]["kind"], BACKEND_MASTER_PASSWORD)
+
+        registry.vault.lock()
+        registry._loaded = False
+        registry.unlock_master("newpass")
+        self.assertEqual(registry.find("h").password, "pw")
+
+    def test_master_to_file(self):
+        registry.setup_vault(BACKEND_MASTER_PASSWORD, "old")
+        self._save([ServerSpec(host="h", user="u", password="pw")])
+
+        registry.rekey(BACKEND_FILE_KEY)
+
+        raw = json.loads(registry.servers_file.read_text(encoding="utf-8"))
+        self.assertEqual(raw["meta"]["kind"], BACKEND_FILE_KEY)
+
+        registry.vault.lock()
+        registry._loaded = False
+        self.assertEqual(registry.find("h").password, "pw")
+
+
+class TestLegacyFormat(ServerRegistryTestBase):
+
+    def test_legacy_flat_list_loads_hosts_without_key(self):
+        # Старый формат — список записей без меты. Без ключа пароли
+        # недоступны, хосты загружаются.
+        self._save([ServerSpec(host="h1", user="u", password="pw")])
+        raw = json.loads(registry.servers_file.read_text(encoding="utf-8"))
+        registry.servers_file.write_text(
+            json.dumps(raw["servers"], ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        registry.vault.lock()
+        registry._loaded = False
+
+        specs = registry.load()
+        self.assertEqual([s.host for s in specs], ["h1"])
+        self.assertEqual(specs[0].password, "")
 
 
 class TestServerRegistryMigration(ServerRegistryTestBase):

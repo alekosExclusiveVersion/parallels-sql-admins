@@ -1,202 +1,182 @@
 """
 common/key_store.py
 
-Хранение Fernet-ключа для шифрования паролей серверов.
+Защита ключа шифрования паролей серверов — два режима на выбор пользователя:
 
-Бэкенды:
-- macOS_keychain: ключ хранится в macOS Keychain (по умолчанию на macOS)
-- file: ключ хранится в файле рядом с servers.json (только для тестов/не-macOS)
+1. master_password — персональный мастер-пароль. Ключ нигде не хранится:
+   выводится из пароля через PBKDF2-HMAC-SHA256. В servers.json лежат только
+   соль и верификатор, которые позволяют проверить правильность пароля.
+   Без пароля данные не расшифровать даже при наличии бинарника и файла.
 
-Выбор бэкенда:
-- на macOS: только Keychain (файловый режим включается только через PARALLELS_SQL_ADMIN_TESTING=1)
-- на других ОС: только файловый бэкенд (PARALLELS_SQL_ADMIN_KEY_BACKEND=file)
+2. file_key — случайный Fernet-ключ в файле servers.key рядом с servers.json
+   (права 0600). Файл ключа переезжает вместе с данными. Существующий ключ
+   никогда не пересоздаётся: повреждённый файл — это ошибка, а не новая
+   генерация (иначе старые пароли молча превращаются в пустые).
 
-На macOS ключ извлекается через `security find-generic-password -s <service> -w`.
-На других ОС используется файловый бэкенд автоматически.
+Ключ живёт в памяти сессии (Vault). В режиме master_password он не пишется
+на диск вовсе; в режиме file_key файл создаётся однократно.
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
+import base64
+import hashlib
+import hmac
+import logging
+import secrets
 from pathlib import Path
 
 from cryptography.fernet import Fernet
 
-from common.config import config
+logger = logging.getLogger(__name__)
+
+BACKEND_MASTER_PASSWORD = "master_password"
+BACKEND_FILE_KEY = "file_key"
+
+KDF_VERSION = 1
+SALT_BYTES = 16
+_VERIFIER_PLAINTEXT = b"Parallels SQL Admin vault verifier v1"
 
 
-def _is_macos() -> bool:
-    return sys.platform == "darwin"
+class VaultError(RuntimeError):
+    """Базовая ошибка хранилища ключей."""
 
 
-def _get_key_from_macos_keychain(service: str, account: str) -> bytes | None:
-    """Извлекает ключ из macOS Keychain через security CLI."""
-    if not _is_macos():
-        return None
+class VaultLockedError(VaultError):
+    """Хранилище заблокировано — требуется разблокировка."""
 
+
+class WrongMasterPasswordError(VaultError):
+    """Неверный мастер-пароль."""
+
+
+def derive_key(password: str, salt: bytes, iterations: int) -> bytes:
+    """Выводит Fernet-ключ из мастер-пароля через PBKDF2-HMAC-SHA256."""
+    dk = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        int(iterations),
+        dklen=32,
+    )
+    return base64.urlsafe_b64encode(dk)
+
+
+def create_master_meta(password: str, iterations: int) -> dict:
+    """Создаёт метаданные vault для мастер-пароля (соль + верификатор)."""
+    salt = secrets.token_bytes(SALT_BYTES)
+    key = derive_key(password, salt, iterations)
+    verifier = Fernet(key).encrypt(_VERIFIER_PLAINTEXT).decode("ascii")
+    return {
+        "version": KDF_VERSION,
+        "kind": BACKEND_MASTER_PASSWORD,
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "iterations": int(iterations),
+        "verifier": verifier,
+    }
+
+
+def verify_master_password(password: str, meta: dict) -> bool:
+    """Проверяет мастер-пароль по верификатору (пароль не сохраняется)."""
     try:
-        result = subprocess.run(
-            [
-                "security",
-                "find-generic-password",
-                "-s",
-                service,
-                "-a",
-                account,
-                "-w",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        key = result.stdout.strip().encode("utf-8")
-        # Проверка валидности ключа Fernet (должен быть base64 длиной 32 байта)
-        Fernet(key)
-        return key
-    except (subprocess.CalledProcessError, ValueError):
-        return None
-
-
-def _store_key_in_macos_keychain(key: bytes, service: str, account: str) -> None:
-    """Сохраняет ключ в macOS Keychain через security CLI."""
-    if not _is_macos():
-        raise RuntimeError("macOS Keychain доступен только на macOS")
-
-    try:
-        # Удаляем старую запись, если есть
-        subprocess.run(
-            [
-                "security",
-                "delete-generic-password",
-                "-s",
-                service,
-                "-a",
-                account,
-            ],
-            capture_output=True,
-            text=True,
-        )
-        # Добавляем новую запись
-        subprocess.run(
-            [
-                "security",
-                "add-generic-password",
-                "-s",
-                service,
-                "-a",
-                account,
-                "-w",
-                key.decode("utf-8"),
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Не удалось сохранить ключ в Keychain: {e.stderr}") from e
-
-
-def _get_key_from_file(key_file: Path) -> bytes | None:
-    """Извлекает ключ из файла."""
-    try:
-        if key_file.exists():
-            key = key_file.read_bytes()
-            Fernet(key)  # Проверка валидности
-            return key
+        salt = base64.b64decode(meta["salt"])
+        key = derive_key(password, salt, int(meta["iterations"]))
+        plain = Fernet(key).decrypt(meta["verifier"].encode("ascii"))
+        return hmac.compare_digest(plain, _VERIFIER_PLAINTEXT)
     except Exception:
-        pass
-    return None
+        return False
 
 
-def _store_key_to_file(key: bytes, key_file: Path) -> None:
-    """Сохраняет ключ в файл с правами 0600."""
+def load_or_create_file_key(key_file: Path) -> bytes:
+    """Возвращает ключ из файла, создавая его при первом запуске.
+
+    Существующий ключ НИКОГДА не пересоздаётся: повреждённый файл — это
+    ошибка, а не новая генерация (иначе старые пароли молча становятся
+    пустыми — см. диагностику потери паролей в 4.21).
+    """
+    if key_file.exists():
+        try:
+            key = key_file.read_bytes()
+            Fernet(key)
+        except (ValueError, TypeError, OSError):
+            raise VaultError(
+                f"Файл ключа повреждён: {key_file}. Восстановите ключ из "
+                "резервной копии, иначе пароли не расшифровать."
+            ) from None
+        return key
+    key = Fernet.generate_key()
     key_file.write_bytes(key)
     key_file.chmod(0o600)
+    logger.info("Создан новый файл ключа: %s", key_file)
+    return key
 
 
-def get_key() -> bytes:
-    """Возвращает Fernet-ключ, загруженный из выбранного бэкенда."""
-    service = "ParallelsSQLAdmins"
-    account = "fernet-key"
+class Vault:
+    """Состояние ключа сессии. После lock() ключ стирается из памяти."""
 
-    # Тестовый режим: разрешить файловый бэкенд через переменную окружения
-    is_testing = os.environ.get("PARALLELS_SQL_ADMIN_TESTING") == "1"
-    key_backend = os.environ.get(
-        "PARALLELS_SQL_ADMIN_KEY_BACKEND", config.security.key_backend
-    )
+    def __init__(self) -> None:
+        self._key: bytes | None = None
+        self._meta: dict | None = None
 
-    if key_backend == "macos_keychain" and _is_macos():
-        key = _get_key_from_macos_keychain(service, account)
-        if key:
-            return key
-        # Если ключа нет в Keychain, пробуем файловый fallback (только для миграции)
-        key = _get_key_from_file(Path("servers.key"))
-        if key:
-            # Миграция: сохраняем в Keychain и удаляем файл
-            _store_key_in_macos_keychain(key, service, account)
-            Path("servers.key").unlink(missing_ok=True)
-            return key
-        # Генерируем новый ключ
-        new_key = Fernet.generate_key()
-        _store_key_in_macos_keychain(new_key, service, account)
-        return new_key
+    @property
+    def unlocked(self) -> bool:
+        return self._key is not None
 
-    # Файловый бэкенд (только для тестов/не-macOS)
-    if is_testing or not _is_macos():
-        key = _get_key_from_file(Path("servers.key"))
-        if key:
-            return key
-        new_key = Fernet.generate_key()
-        _store_key_to_file(new_key, Path("servers.key"))
-        return new_key
+    @property
+    def kind(self) -> str | None:
+        if not self._meta:
+            return None
+        return self._meta.get("kind")
 
-    # На macOS без тестового режима и без ключа в Keychain — ошибка
-    raise RuntimeError("Key not found in macOS Keychain and testing mode is disabled")
+    @property
+    def meta(self) -> dict | None:
+        if not self._meta:
+            return None
+        return dict(self._meta)
 
+    def lock(self) -> None:
+        self._key = None
+        self._meta = None
 
-def store_key(key: bytes) -> None:
-    """Сохраняет ключ в выбранный бэкенд."""
-    service = "ParallelsSQLAdmins"
-    account = "fernet-key"
+    def unlock_master(self, password: str, meta: dict) -> None:
+        if not verify_master_password(password, meta):
+            raise WrongMasterPasswordError("Неверный мастер-пароль")
+        salt = base64.b64decode(meta["salt"])
+        self._key = derive_key(password, salt, int(meta["iterations"]))
+        self._meta = dict(meta)
 
-    key_backend = os.environ.get(
-        "PARALLELS_SQL_ADMIN_KEY_BACKEND", config.security.key_backend
-    )
+    def unlock_file(self, key_file: Path) -> None:
+        self._key = load_or_create_file_key(key_file)
+        self._meta = {
+            "version": KDF_VERSION,
+            "kind": BACKEND_FILE_KEY,
+        }
 
-    if key_backend == "macos_keychain" and _is_macos():
-        _store_key_in_macos_keychain(key, service, account)
-    else:
-        _store_key_to_file(key, Path("servers.key"))
+    def setup_master(self, password: str, iterations: int) -> None:
+        """Создаёт новый vault для мастер-пароля и разблокирует его."""
+        meta = create_master_meta(password, iterations)
+        self.unlock_master(password, meta)
 
+    def setup_file(self, key_file: Path) -> None:
+        """Создаёт/загружает файловый ключ и разблокирует vault."""
+        self.unlock_file(key_file)
 
-def delete_key() -> None:
-    """Удаляет ключ из всех бэкендов."""
-    service = "ParallelsSQLAdmins"
-    account = "fernet-key"
+    def encrypt(self, value: str) -> str:
+        if not value:
+            return ""
+        return self._fernet().encrypt(value.encode("utf-8")).decode("utf-8")
 
-    # Удаляем из Keychain
-    if _is_macos():
-        subprocess.run(
-            [
-                "security",
-                "delete-generic-password",
-                "-s",
-                service,
-                "-a",
-                account,
-            ],
-            capture_output=True,
-            text=True,
-        )
+    def decrypt(self, value: str) -> str:
+        if not value:
+            return ""
+        return self._fernet().decrypt(value.encode("utf-8")).decode("utf-8")
 
-    # Удаляем файл
-    Path("servers.key").unlink(missing_ok=True)
+    def _fernet(self) -> Fernet:
+        if self._key is None:
+            raise VaultLockedError(
+                "Хранилище ключей заблокировано: сначала разблокируйте ключ"
+            )
+        return Fernet(self._key)
 
 
-if __name__ == "__main__":
-    # Тест
-    key = get_key()
-    print(f"Key loaded: {key[:16].hex()}... (len={len(key)})")
-    print(f"macOS: {_is_macos()}")
+vault = Vault()

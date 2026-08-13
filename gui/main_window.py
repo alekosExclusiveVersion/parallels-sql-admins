@@ -37,6 +37,12 @@ from common.sql_splitter import split_statements
 from common.logger import logger
 from common.version import APP_VERSION
 from common.mysql_client import mysql
+from common.key_store import (
+    BACKEND_FILE_KEY,
+    BACKEND_MASTER_PASSWORD,
+    VaultError,
+    WrongMasterPasswordError,
+)
 from common.server_registry import (
     ENGINE_MYSQL,
     ServerSpec,
@@ -56,6 +62,8 @@ from gui.scripts_library import ScriptStore
 from gui.script_tab import ScriptTab
 from gui.scripts_manager_dialog import ScriptsManagerDialog
 from gui.server_dialog import ServerDialog
+from gui.master_password_dialog import MasterPasswordDialog
+from gui.settings_dialog import SettingsDialog
 from gui.connection_strings_dialog import ConnectionStringsDialog
 
 
@@ -97,6 +105,7 @@ class MainWindow(QWidget):
 
         self._on_theme_applied()
 
+        self._ensure_vault_at_startup()
         self._load_servers()
 
     # ----------------------------------------------------------
@@ -302,6 +311,83 @@ class MainWindow(QWidget):
     # Repository
     # ----------------------------------------------------------
 
+    # ----------------------------------------------------------
+    # Vault (защита ключа шифрования реквизитов)
+    # ----------------------------------------------------------
+
+    def _ensure_vault_at_startup(self) -> None:
+        """Разблокирует хранилище при старте (если требуется).
+
+        Для мастер-пароля показывается диалог ввода. Если пользователь
+        отменяет — дерево серверов остаётся пустым, запись запрещена
+        (registry.save поднимет VaultLockedError).
+        """
+        if not registry.needs_unlock():
+            registry.ensure_key()
+            return
+
+        if self._prompt_unlock_vault():
+            return
+
+        self.append_log(
+            "WARNING",
+            "Хранилище заблокировано: без мастер-пароля список серверов "
+            "недоступен.",
+        )
+
+    def _prompt_unlock_vault(self) -> bool:
+        """Ввод мастер-пароля с повтором при неверном пароле."""
+        while True:
+            dialog = MasterPasswordDialog(self, mode="unlock")
+            if dialog.exec() != MasterPasswordDialog.Accepted:
+                return False
+            try:
+                registry.unlock_master(dialog.password())
+                registry.ensure_key()
+                return True
+            except WrongMasterPasswordError:
+                QMessageBox.warning(
+                    self,
+                    "Мастер-пароль",
+                    "Неверный мастер-пароль. Попробуйте ещё раз.",
+                )
+
+    def _ensure_vault_for_write(self) -> bool:
+        """Гарантирует, что vault создан и разблокирован перед записью.
+
+        Возвращает False, если пользователь отменил разблокировку/создание.
+        """
+        if registry.vault.unlocked:
+            return True
+
+        if registry.needs_unlock():
+            return self._prompt_unlock_vault()
+
+        if registry.read_meta() is not None:
+            registry.ensure_key()
+            return registry.vault.unlocked
+
+        # Хранилища ещё нет — создаём по предпочтению из настроек
+        # (раздел «Конфиденциальность»).
+        kind = theme_styles.load_security_backend()
+        try:
+            if kind == BACKEND_MASTER_PASSWORD:
+                dialog = MasterPasswordDialog(self, mode="create")
+                if dialog.exec() != MasterPasswordDialog.Accepted:
+                    return False
+                registry.setup_vault(kind, dialog.password())
+            else:
+                registry.setup_vault(BACKEND_FILE_KEY)
+            return True
+        except VaultError as ex:
+            QMessageBox.warning(self, "Защита реквизитов", str(ex))
+            return False
+
+    def _open_settings(self):
+        dialog = SettingsDialog(self)
+        dialog.exec()
+        self._load_servers()
+
     def _load_servers(self):
 
         servers = self.repository.load_servers()
@@ -341,10 +427,14 @@ class MainWindow(QWidget):
     # ----------------------------------------------------------
 
     def _add_server(self):
+        if not self._ensure_vault_for_write():
+            return
         self._open_server_dialog(None)
 
     def _edit_server(self, host: str):
         if not host:
+            return
+        if not self._ensure_vault_for_write():
             return
         spec = registry.find(host)
         if spec is None:
@@ -353,6 +443,8 @@ class MainWindow(QWidget):
 
     def _remove_server(self, host: str):
         if not host:
+            return
+        if not self._ensure_vault_for_write():
             return
 
         answer = QMessageBox.question(
@@ -426,6 +518,8 @@ class MainWindow(QWidget):
 
     def _open_connection_strings(self):
         """Открывает диалог импорта/экспорта строк подключения."""
+        if not self._ensure_vault_for_write():
+            return
         dialog = ConnectionStringsDialog(self)
 
         if dialog.exec() == ConnectionStringsDialog.Accepted:
@@ -1990,6 +2084,14 @@ class MainWindow(QWidget):
         )
         act_save_log.triggered.connect(self._save_log)
         act_save_log.setShortcut("Ctrl+S")
+
+        menu_file.addSeparator()
+
+        act_settings = menu_file.addAction(
+            icon("settings"), "Настройки…"
+        )
+        act_settings.triggered.connect(self._open_settings)
+        act_settings.setShortcut("Ctrl+,")
 
         menu_file.addSeparator()
 

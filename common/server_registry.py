@@ -4,8 +4,20 @@ common/server_registry.py
 Реестр серверов (MySQL/MSSQL) с персональными реквизитами подключения.
 
 Каждый сервер хранится как ServerSpec (host, port, engine, user, password)
-в JSON-файле servers.json. Пароли шифруются Fernet (cryptography): ключ
-хранится в macOS Keychain (на macOS) или в файле servers.key (fallback).
+в JSON-файле servers.json. Пароли шифруются Fernet (cryptography). Ключ
+защищается одним из двух режимов (см. common/key_store.py):
+
+- master_password — персональный мастер-пароль: ключ выводится из пароля
+  (PBKDF2), нигде не хранится, в файле только соль+верификатор;
+- file_key — случайный ключ в файле servers.key рядом с servers.json.
+
+Формат файла: {"meta": {...}, "servers": [...]}. Мета нужна, чтобы файл был
+самодостаточным: перенос на другую машину не требует внешних настроек.
+Старый плоский формат (список без меты) читается как legacy-миграция.
+
+Защита от потери данных (диагноз 4.21): save() запрещён, пока vault
+заблокирован, — запись «пустых» паролей поверх нерасшифрованных исключена
+на уровне API. Повреждённый файл ключа не пересоздаётся.
 
 Миграция: если servers.json ещё нет, а рядом есть servers.txt (старый
 формат — просто хосты), серверы импортируются как MySQL с реквизитами
@@ -22,14 +34,19 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from cryptography.fernet import Fernet
-
 from common.config import config
-from common.key_store import get_key
+from common.key_store import (
+    BACKEND_FILE_KEY,
+    BACKEND_MASTER_PASSWORD,
+    VaultError,
+    VaultLockedError,
+    vault,
+)
+from common.logger import logger
 
 ENGINE_MYSQL = "mysql"
 ENGINE_MSSQL = "mssql"
@@ -82,35 +99,96 @@ class ServerRegistry:
         base = Path(config.advanced.servers_file)
         self.servers_file = base if base.is_absolute() else base
         self.key_file = self.servers_file.with_suffix(".key")
-        self._fernet = None
+        self.vault = vault
 
         # Путь к папке резервных копий
         self.backups_dir = self.servers_file.parent / "backups"
 
     # ----------------------------------------------------------
-    # Ключ шифрования
+    # Ключ шифрования (vault)
     # ----------------------------------------------------------
 
-    def _load_fernet(self) -> Fernet:
-        if self._fernet is not None:
-            return self._fernet
+    def read_meta(self) -> dict | None:
+        """Возвращает мету vault из servers.json (не требует ключа).
 
-        # Получаем ключ из key_store (macOS Keychain или файловый fallback)
-        key = get_key()
-        self._fernet = Fernet(key)
-        return self._fernet
+        None — файла нет или старый плоский формат без меты.
+        """
+        with self._lock:
+            try:
+                raw = json.loads(self.servers_file.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return None
+            if isinstance(raw, dict) and "meta" in raw:
+                return raw["meta"]
+            return None
+
+    def needs_unlock(self) -> bool:
+        """Нужно ли действие пользователя до загрузки данных.
+
+        True: существует vault вида master_password и он не разблокирован.
+        Для file_key разблокировка происходит автоматически.
+        """
+        meta = self.read_meta()
+        if not meta:
+            return False
+        if meta.get("kind") == BACKEND_FILE_KEY:
+            return False
+        return not self.vault.unlocked
+
+    def unlock_master(self, password: str) -> None:
+        """Разблокирует vault существующим мастер-паролем."""
+        meta = self.read_meta()
+        if not meta:
+            raise VaultError("Нет метаданных ключа в servers.json")
+        self.vault.unlock_master(password, meta)
+
+    def ensure_key(self) -> None:
+        """Разблокирует vault по типу меты (автоматически для file_key)."""
+        meta = self.read_meta()
+        if not meta or self.vault.unlocked:
+            return
+        if meta.get("kind") == BACKEND_FILE_KEY:
+            self.vault.unlock_file(self.key_file)
+
+    def setup_vault(self, kind: str, password: str | None = None) -> None:
+        """Создаёт vault для нового/первого запуска (без записи файла)."""
+        if kind == BACKEND_MASTER_PASSWORD:
+            if not password:
+                raise VaultError("Для мастер-пароля требуется пароль")
+            self.vault.setup_master(password, config.security.kdf_iterations)
+        elif kind == BACKEND_FILE_KEY:
+            self.vault.setup_file(self.key_file)
+        else:
+            raise VaultError(f"Неизвестный тип ключа: {kind}")
+
+    def rekey(self, kind: str, password: str | None = None) -> None:
+        """Перешифровывает servers.json под новый тип ключа.
+
+        Требует разблокированного vault (текущий ключ). Возвращает None;
+        при неверном пароле/блокировке поднимает VaultError.
+        """
+        with self._lock:
+            specs = self.load()
+            self.setup_vault(kind, password)
+            self.save(specs)
 
     def encrypt(self, value: str) -> str:
         if not value:
             return ""
-        return self._load_fernet().encrypt(value.encode("utf-8")).decode("utf-8")
+        return self.vault.encrypt(value)
 
     def decrypt(self, value: str) -> str:
         if not value:
             return ""
         try:
-            return self._load_fernet().decrypt(value.encode("utf-8")).decode("utf-8")
+            return self.vault.decrypt(value)
+        except VaultLockedError:
+            raise
         except Exception:
+            logger.warning(
+                "Не удалось расшифровать пароль для одного из серверов "
+                "(ключ не подходит или токен повреждён)"
+            )
             return ""
 
     # ----------------------------------------------------------
@@ -131,16 +209,43 @@ class ServerRegistry:
             except (OSError, ValueError):
                 raw = []
 
+            legacy = not isinstance(raw, dict) or "meta" not in raw
+
+            if legacy:
+                # Старый плоский формат: пароли пытаемся расшифровать
+                # текущим ключом; без ключа — только хосты (legacy-миграция).
+                self.ensure_key()
+                entries = raw if isinstance(raw, list) else []
+            else:
+                self.ensure_key()
+                kind = raw["meta"].get("kind")
+                if kind not in (BACKEND_MASTER_PASSWORD, BACKEND_FILE_KEY):
+                    raise VaultError(f"Неизвестный тип ключа: {kind}")
+                if not self.vault.unlocked:
+                    raise VaultLockedError(
+                        "Хранилище зашифровано мастер-паролем — "
+                        "требуется разблокировка"
+                    )
+                entries = raw.get("servers", [])
+
             specs: list[ServerSpec] = []
 
-            for entry in raw:
+            can_decrypt = self.vault.unlocked
+
+            for entry in entries:
                 try:
+                    raw_password = str(entry.get("password", ""))
+                    password = (
+                        self.decrypt(raw_password)
+                        if can_decrypt and raw_password
+                        else ""
+                    )
                     spec = ServerSpec(
                         host=str(entry.get("host", "")).strip(),
                         port=int(entry.get("port") or 0),
                         engine=str(entry.get("engine") or ENGINE_MYSQL).lower(),
                         user=str(entry.get("user", "")),
-                        password=self.decrypt(str(entry.get("password", ""))),
+                        password=password,
                         name=str(entry.get("name", "")),
                     )
                 except (TypeError, ValueError):
@@ -187,7 +292,8 @@ class ServerRegistry:
             for host in hosts
         ]
         self._loaded = True
-        self.save(list(self._specs))
+        if self.vault.unlocked:
+            self.save(list(self._specs))
 
     def _create_backup(self) -> None:
         """Создаёт timestamp-резервную копию servers.json в backups/."""
@@ -231,20 +337,33 @@ class ServerRegistry:
 
     def save(self, specs: list[ServerSpec]) -> None:
         with self._lock:
+            if not self.vault.unlocked:
+                raise VaultLockedError(
+                    "Хранилище заблокировано — сохранить нельзя. "
+                    "Разблокируйте ключ (мастер-пароль или файл ключа)."
+                )
+
             self._specs = [s for s in specs if s and s.host]
             self._loaded = True
 
-            payload = [
-                {
-                    "host": s.host,
-                    "port": s.port,
-                    "engine": s.engine,
-                    "user": s.user,
-                    "password": self.encrypt(s.password),
-                    "name": s.name,
-                }
-                for s in self._specs
-            ]
+            meta = self.vault.meta or {
+                "version": 1,
+                "kind": BACKEND_FILE_KEY,
+            }
+            payload = {
+                "meta": meta,
+                "servers": [
+                    {
+                        "host": s.host,
+                        "port": s.port,
+                        "engine": s.engine,
+                        "user": s.user,
+                        "password": self.vault.encrypt(s.password),
+                        "name": s.name,
+                    }
+                    for s in self._specs
+                ],
+            }
 
             try:
                 # Создаём резервную копию перед сохранением

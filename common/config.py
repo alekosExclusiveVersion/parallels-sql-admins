@@ -125,8 +125,8 @@ class AdvancedConfig:
 
 @dataclass(frozen=True)
 class SecurityConfig:
-    key_backend: str
     backup_count: int
+    kdf_iterations: int
 
 
 @dataclass(frozen=True)
@@ -334,11 +334,11 @@ def load_config(config_file: str | Path | None = None) -> Config:
             ),
         ),
         security=SecurityConfig(
-            key_backend=p.get(
-                "security", "key_backend", fallback="macos_keychain"
-            ),
             backup_count=p.getint(
                 "security", "backup_count", fallback=5
+            ),
+            kdf_iterations=p.getint(
+                "security", "kdf_iterations", fallback=600000
             ),
         ),
     )
