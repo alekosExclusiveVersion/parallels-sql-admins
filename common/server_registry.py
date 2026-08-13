@@ -5,12 +5,14 @@ common/server_registry.py
 
 Каждый сервер хранится как ServerSpec (host, port, engine, user, password)
 в JSON-файле servers.json. Пароли шифруются Fernet (cryptography): ключ
-лежит рядом в servers.key. Логин/пароль «зашиты» в настройки каждого
-сервера и используются клиентами при подключении (вместо глобальных).
+хранится в macOS Keychain (на macOS) или в файле servers.key (fallback).
 
 Миграция: если servers.json ещё нет, а рядом есть servers.txt (старый
 формат — просто хосты), серверы импортируются как MySQL с реквизитами
 из [mysql] config.ini.
+
+Резервное копирование: при каждом сохранении создаётся timestamp-копия
+в подпапке backups/ с автоматической подчисткой старых (backup_count).
 
 Потокобезопасность: доступ к кэшу — под RLock; credentials_for()
 вызывается из рабочих потоков (GUI/worker), поэтому чтение безопасно.
@@ -21,11 +23,13 @@ from __future__ import annotations
 import json
 import threading
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from cryptography.fernet import Fernet
 
 from common.config import config
+from common.key_store import get_key
 
 ENGINE_MYSQL = "mysql"
 ENGINE_MSSQL = "mssql"
@@ -80,6 +84,9 @@ class ServerRegistry:
         self.key_file = self.servers_file.with_suffix(".key")
         self._fernet = None
 
+        # Путь к папке резервных копий
+        self.backups_dir = self.servers_file.parent / "backups"
+
     # ----------------------------------------------------------
     # Ключ шифрования
     # ----------------------------------------------------------
@@ -88,18 +95,9 @@ class ServerRegistry:
         if self._fernet is not None:
             return self._fernet
 
-        try:
-            raw = self.key_file.read_bytes()
-            self._fernet = Fernet(raw)
-        except Exception:
-            key = Fernet.generate_key()
-            try:
-                self.key_file.write_bytes(key)
-                self.key_file.chmod(0o600)
-            except OSError:
-                pass
-            self._fernet = Fernet(key)
-
+        # Получаем ключ из key_store (macOS Keychain или файловый fallback)
+        key = get_key()
+        self._fernet = Fernet(key)
         return self._fernet
 
     def encrypt(self, value: str) -> str:
@@ -191,6 +189,46 @@ class ServerRegistry:
         self._loaded = True
         self.save(list(self._specs))
 
+    def _create_backup(self) -> None:
+        """Создаёт timestamp-резервную копию servers.json в backups/."""
+        try:
+            # Создаём папку backups, если её нет
+            self.backups_dir.mkdir(parents=True, exist_ok=True)
+
+            # Генерируем имя файла с timestamp
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            backup_file = self.backups_dir / f"servers-{timestamp}.bak.json"
+
+            # Копируем текущий файл
+            if self.servers_file.exists():
+                content = self.servers_file.read_text(encoding="utf-8")
+                backup_file.write_text(content, encoding="utf-8")
+                backup_file.chmod(0o600)
+
+            # Очищаем старые копии
+            self._cleanup_backups()
+        except OSError:
+            pass
+
+    def _cleanup_backups(self) -> None:
+        """Удаляет старые резервные копии, оставляя только backup_count штук."""
+        try:
+            if not self.backups_dir.exists():
+                return
+
+            # Получаем все файлы резервных копий, отсортированные по времени
+            backups = sorted(
+                self.backups_dir.glob("servers-*.bak.json"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+
+            # Удаляем старые копии (оставляем только backup_count)
+            for backup in backups[config.security.backup_count:]:
+                backup.unlink()
+        except OSError:
+            pass
+
     def save(self, specs: list[ServerSpec]) -> None:
         with self._lock:
             self._specs = [s for s in specs if s and s.host]
@@ -209,10 +247,16 @@ class ServerRegistry:
             ]
 
             try:
+                # Создаём резервную копию перед сохранением
+                self._create_backup()
+
+                # Сохраняем основной файл
                 self.servers_file.write_text(
                     json.dumps(payload, ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
+                # Устанавливаем права 0600
+                self.servers_file.chmod(0o600)
             except OSError:
                 pass
 

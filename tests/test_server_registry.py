@@ -6,6 +6,7 @@ tests/test_server_registry.py
 построение SELECT с учётом синтаксиса СУБД.
 """
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,10 +36,14 @@ def fake_config(**overrides) -> SimpleNamespace:
         password=overrides.get("mssql_password", ""),
         port=1433,
     )
+    security = SimpleNamespace(
+        key_backend=overrides.get("key_backend", "file"),
+        backup_count=overrides.get("backup_count", 5),
+    )
     advanced = SimpleNamespace(
         servers_file=str(overrides.get("servers_file", "servers.json")),
     )
-    return SimpleNamespace(mysql=mysql, mssql=mssql, advanced=advanced)
+    return SimpleNamespace(mysql=mysql, mssql=mssql, security=security, advanced=advanced)
 
 
 class ServerRegistryTestBase(unittest.TestCase):
@@ -49,6 +54,29 @@ class ServerRegistryTestBase(unittest.TestCase):
         registry._fernet = None
         registry._loaded = False
         registry._specs = []
+        registry.backups_dir = self._tmp / "backups"
+
+        # Включаем тестовый режим через переменную окружения (разрешает файловый backend)
+        os.environ["PARALLELS_SQL_ADMIN_TESTING"] = "1"
+
+        # Настройка config.security для использования файлового backend
+        from common import config as config_module
+        from types import SimpleNamespace
+        config_module.config = config_module.Config(
+            mysql=config_module.config.mysql,
+            mssql=config_module.config.mssql,
+            pgsql=config_module.config.pgsql,
+            parallel=config_module.config.parallel,
+            sizes=config_module.config.sizes,
+            filter=config_module.config.filter,
+            logging=config_module.config.logging,
+            output=config_module.config.output,
+            advanced=config_module.config.advanced,
+            security=SimpleNamespace(
+                key_backend="file",
+                backup_count=5,
+            ),
+        )
 
     def _save(self, specs):
         registry.save(specs)
@@ -90,18 +118,23 @@ class TestServerRegistryPersistence(ServerRegistryTestBase):
         self.assertIn("password", raw)
 
     def test_missing_key_generates_and_round_trips(self):
-        self.assertFalse(registry.key_file.exists())
-        self._save([ServerSpec(host="h1", user="u", password="pw")])
+        # В новой версии ключ хранится в key_store (file или Keychain)
+        # Проверяем, что ключ загружается и пароль расшифровывается
+        from common.key_store import delete_key
+        delete_key()  # Удаляем ключ перед тестом
 
-        self.assertTrue(registry.key_file.exists())
+        self._save([ServerSpec(host="h1", user="u", password="pw")])
         spec = self._reload()[0]
         self.assertEqual(spec.password, "pw")
 
     def test_corrupt_password_returns_empty(self):
         self._save([ServerSpec(host="h1", user="u", password="pw")])
         registry._fernet = None
-        # Перезаписываем пароль мусором (другой ключ)
-        registry.key_file.write_bytes(b"garbage-not-a-key")
+
+        # Перезаписываем файл ключа мусором
+        from common.key_store import delete_key, _store_key_to_file
+        delete_key()
+        _store_key_to_file(b"garbage-not-a-key", Path("servers.key"))
 
         spec = self._reload()[0]
         self.assertEqual(spec.password, "")

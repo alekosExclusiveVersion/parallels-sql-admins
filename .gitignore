@@ -38,3 +38,6 @@ Parallels SQL Admin.spec
 # Реквизиты серверов (генерируются при первом запуске)
 servers.json
 servers.key
+
+# Резервные копии серверов
+backups/

@@ -124,6 +124,12 @@ class AdvancedConfig:
 
 
 @dataclass(frozen=True)
+class SecurityConfig:
+    key_backend: str
+    backup_count: int
+
+
+@dataclass(frozen=True)
 class Config:
     mysql: MySQLConfig
     mssql: MSSQLConfig
@@ -134,6 +140,7 @@ class Config:
     logging: LoggingConfig
     output: OutputConfig
     advanced: AdvancedConfig
+    security: SecurityConfig
 
 
 def _bool(cfg: ConfigParser, section: str, option: str) -> bool:
@@ -324,6 +331,14 @@ def load_config(config_file: str | Path | None = None) -> Config:
                 "advanced",
                 "servers_file",
                 fallback="servers.json",
+            ),
+        ),
+        security=SecurityConfig(
+            key_backend=p.get(
+                "security", "key_backend", fallback="macos_keychain"
+            ),
+            backup_count=p.getint(
+                "security", "backup_count", fallback=5
             ),
         ),
     )
