@@ -13,10 +13,17 @@ common/connection_string.py
         pgsql://postgres:my@pass@pg.example.com:5432
 
 Движок обязателен (mysql/mssql/pgsql) — по нему при импорте
-определяется СУБД. user и password экранируются URL-кодированием
-(percent-encoding), так что любые символы, включая '@'/':' и пробелы,
-корректно обрабатываются. Порт необязателен: если опущен, при
-создании ServerSpec подставляется порт по умолчанию для движка.
+определяется СУБД. Принимаются алиасы: sqlserver/sql_server/sqlsrv
+вместо mssql, postgres/postgresql вместо pgsql. user и password
+экранируются URL-кодированием (percent-encoding), так что любые
+символы, включая '@'/':' и пробелы, корректно обрабатываются.
+Порт необязателен: если опущен, при создании ServerSpec подставляется
+порт по умолчанию для движка.
+
+Дополнительные параметры после host:port игнорируются — как ADO.NET
+(;connection_timeout=30), так и query-строка URI (?ssl=true):
+
+    sqlserver://sa:1qazXSW%40@192.168.128.160:1436;connection_timeout=30
 
 Функция parse_connection_string() используется диалогом импорта
 и тестами.
@@ -37,9 +44,20 @@ from common.server_registry import (
 # Движки, поддерживаемые строками подключения (порядок важен для подсказок).
 SUPPORTED_ENGINES = (ENGINE_MYSQL, ENGINE_MSSQL, ENGINE_PGSQL)
 
+# Алиасы схем в строках подключения → канонический движок.
+_ENGINE_ALIASES = {
+    "sqlserver": ENGINE_MSSQL,
+    "sql_server": ENGINE_MSSQL,
+    "sqlsrv": ENGINE_MSSQL,
+    "postgres": ENGINE_PGSQL,
+    "postgresql": ENGINE_PGSQL,
+}
+
 
 def _validate_engine(engine: str) -> str:
-    engine = (engine or "").strip().lower()
+    engine = _ENGINE_ALIASES.get(
+        (engine or "").strip().lower(), (engine or "").strip().lower()
+    )
     if engine not in SUPPORTED_ENGINES:
         raise ValueError(
             f"Неизвестный движок '{engine}'. Ожидается один из: "
@@ -69,10 +87,13 @@ def format_connection_string(spec: ServerSpec) -> str:
 def parse_connection_string(line: str) -> ServerSpec:
     """Разбирает строку подключения в ServerSpec.
 
-    Формат: engine://[user[:password]@]host[:port]
+    Формат: engine://[user[:password]@]host[:port][;params][?query]
 
-    user/password декодируются из percent-encoding. Строка БЕЗ движка
-    или с неизвестным движком выбрасывает ValueError с понятным текстом.
+    Принимаются алиасы движков (sqlserver→mssql, postgres→pgsql),
+    параметры после host:port (ADO.NET `;key=value`, URI `?key=value`)
+    игнорируются. user/password декодируются из percent-encoding.
+    Строка БЕЗ движка или с неизвестным движком выбрасывает ValueError
+    с понятным текстом.
     """
     raw = (line or "").strip()
 
@@ -94,6 +115,10 @@ def parse_connection_string(line: str) -> ServerSpec:
     if not sep:
         host_part = rest
         credentials = ""
+
+    # Игнорируем дополнительные параметры после host:port:
+    # ADO.NET (;connection_timeout=30) и query-строку URI (?ssl=true).
+    host_part = host_part.split(";", 1)[0].split("?", 1)[0]
 
     # host[:port]
     if host_part.startswith("["):

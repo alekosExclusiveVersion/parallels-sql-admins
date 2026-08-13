@@ -539,6 +539,8 @@ class SqlConsolePanel(QWidget):
 
         self.cb_database.blockSignals(False)
 
+        self.cb_database.refresh_completion()
+
         self._catalog_schedule()
 
     # ----------------------------------------------------------
@@ -613,8 +615,14 @@ class SqlConsolePanel(QWidget):
 
         if previous:
             self._select_server_by_host(previous)
+        else:
+            # По умолчанию поле пустое: addItem сам выставляет первый пункт.
+            self.cb_server.setCurrentIndex(-1)
+            self.cb_server.setCurrentText("")
 
         self.cb_server.blockSignals(False)
+
+        self.cb_server.refresh_completion()
 
     def clear_editor(self) -> None:
         self.editor.clear()

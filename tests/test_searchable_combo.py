@@ -30,6 +30,20 @@ class ContainsMatchTest(unittest.TestCase):
     def test_no_match(self):
         self.assertFalse(contains_match("oracle", "MySQL box", "db.local"))
 
+    def test_host_tld_not_matched(self):
+        self.assertFalse(contains_match("ru", "Ext4", "ext4.tradesoft.ru"))
+        self.assertTrue(contains_match("ru", "p7ru1", "p7ru1.tradesoft.ru"))
+
+    def test_subdomain_still_matched(self):
+        self.assertTrue(contains_match("tradesoft", "Ext4", "ext4.tradesoft.ru"))
+
+    def test_ip_host_searched_whole(self):
+        self.assertTrue(contains_match("10.0.0", "Srv", "10.0.0.5"))
+        self.assertTrue(contains_match("0.0.5", "Srv", "10.0.0.5"))
+
+    def test_single_label_host_searched_whole(self):
+        self.assertTrue(contains_match("srv", "Main", "srv-01"))
+
     def test_empty_query_matches_all(self):
         self.assertTrue(contains_match("", "anything", "host"))
         self.assertTrue(contains_match("  ", "anything", "host"))
@@ -75,12 +89,31 @@ class SearchableComboBoxTest(unittest.TestCase):
         combo._on_text_changed("")
         self.assertEqual(len(self._rows(combo)), 3)
 
-    def test_exact_selection_not_filtered(self):
+    def test_typing_back_to_selected_item_refreshes_model(self):
         combo = self._make()
         combo._on_text_changed("Prod")
-        self.assertEqual(len(self._rows(combo)), 2)
+        self.assertEqual(self._rows(combo), ["Prod-01", "Prod-02"])
         combo._on_text_changed("Prod-01")
-        self.assertEqual(len(self._rows(combo)), 2)
+        self.assertEqual(self._rows(combo), ["Prod-01"])
+        self.assertFalse(combo._completer.popup().isVisible())
+
+    def test_empty_text_refreshes_model_and_hides_popup(self):
+        combo = self._make()
+        combo._on_text_changed("")
+        self.assertEqual(len(self._rows(combo)), 3)
+        self.assertFalse(combo._completer.popup().isVisible())
+
+    def test_refresh_completion_after_rebuild(self):
+        combo = self._make()
+        combo._on_text_changed("dev")
+        self.assertEqual(self._rows(combo), ["Dev"])
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("New-01", "h1")
+        combo.addItem("New-02", "h2")
+        combo.blockSignals(False)
+        combo.refresh_completion()
+        self.assertEqual(self._rows(combo), ["New-01"])
 
     def test_activated_resolves_item(self):
         combo = self._make()

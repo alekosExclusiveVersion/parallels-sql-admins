@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import csv
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 from PySide6.QtCore import QRectF
 from PySide6.QtWidgets import (
@@ -87,15 +87,26 @@ class RoundedHeader(QHeaderView):
         # Клин закрывает белым и внутреннюю часть дуги QSS-контура таблицы
         # (дуга описана вокруг угла таблицы, а клин — вокруг угла viewport,
         # он на 1px внутри). Дорисовываем дугу границы поверх клина, чтобы
-        # контур в углах не прерывался.
+        # контур в углах не прерывался. Цвет дуги повторяет цвет рамки
+        # таблицы: при фокусе — accent, иначе border (иначе при фокусе
+        # акцентная рамка «разрывается» в углу серой дугой).
         if rad >= 2:
             stroke_r = rad - 0.5
             cy = rad - 1.0
+            table = self.parentWidget()
+            focused = bool(table is not None and table.hasFocus())
+            stroke = QColor(
+                theme_color("accent") if focused else theme_color("border")
+            )
             p.setBrush(Qt.NoBrush)
-            p.setPen(QPen(QColor(theme_color("border")), 1.0))
+            p.setPen(QPen(stroke, 1.0))
             p.drawArc(QRectF(rad - 1.0 - stroke_r, cy - stroke_r, 2 * stroke_r, 2 * stroke_r), 90 * 16, 90 * 16)
             p.drawArc(QRectF(r.width() - rad + 1.0 - stroke_r, cy - stroke_r, 2 * stroke_r, 2 * stroke_r), 0 * 16, 90 * 16)
         p.end()
+
+    def refresh(self) -> None:
+        """Перерисовывает скруглённые углы (смена фокуса таблицы)."""
+        self.viewport().update()
 
 
 class ResultTable(QTableWidget):
@@ -151,6 +162,14 @@ class ResultTable(QTableWidget):
         self.setWordWrap(False)
         self.setCornerButtonEnabled(False)
         self.setFocusPolicy(Qt.StrongFocus)
+
+    def focusInEvent(self, event) -> None:
+        super().focusInEvent(event)
+        self._rounded_header.refresh()
+
+    def focusOutEvent(self, event) -> None:
+        super().focusOutEvent(event)
+        self._rounded_header.refresh()
 
     def attach_filters(
         self,

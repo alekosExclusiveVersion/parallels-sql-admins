@@ -39,6 +39,29 @@ class TestSqlConsolePanel(unittest.TestCase):
         self.assertEqual(self.panel.cb_server.itemText(0), "Prod")
         self.assertEqual(self.panel.cb_server.itemData(0), "db1.example.com")
 
+    def test_default_server_selection_empty(self):
+        self.panel.set_servers([
+            ("Prod", "db1.example.com"),
+            ("Report", "db2.example.com"),
+        ])
+
+        self.assertEqual(self.panel.cb_server.currentIndex(), -1)
+        self.assertEqual(self.panel.cb_server.currentText(), "")
+
+    def test_set_servers_keeps_existing_selection(self):
+        self.panel.set_servers([
+            ("Prod", "db1.example.com"),
+            ("Report", "db2.example.com"),
+        ])
+        self.panel.cb_server.setCurrentIndex(1)
+        self.panel.set_servers([
+            ("Prod", "db1.example.com"),
+            ("Report", "db2.example.com"),
+            ("New", "db3.example.com"),
+        ])
+
+        self.assertEqual(self.panel.cb_server.currentIndex(), 1)
+
     def test_current_host_resolves_host_from_data(self):
         self.panel.set_servers([
             ("Prod", "db1.example.com"),

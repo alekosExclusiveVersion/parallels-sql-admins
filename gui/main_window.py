@@ -1344,6 +1344,9 @@ class MainWindow(QWidget):
         ]
 
     def _sql_server_changed(self, text):
+        index = self.panel.cb_server.currentIndex()
+        if index < 0 or text != self.panel.cb_server.itemText(index):
+            return
         self._sql_refresh_databases()
 
     def _sql_scope_changed(self, checked):

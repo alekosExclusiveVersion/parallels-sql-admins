@@ -115,3 +115,42 @@ class TestParse:
     def test_bad_port_raises(self):
         with pytest.raises(ValueError):
             parse_connection_string("mysql://root@host:notaport")
+
+    def test_sqlserver_alias(self):
+        spec = parse_connection_string(
+            "sqlserver://sa:1qazXSW%40@192.168.128.160:1436;connection_timeout=30"
+        )
+        assert spec.engine == ENGINE_MSSQL
+        assert spec.host == "192.168.128.160"
+        assert spec.port == 1436
+        assert spec.user == "sa"
+        assert spec.password == "1qazXSW@"
+
+    def test_sql_server_and_sqlsrv_aliases(self):
+        assert parse_connection_string(
+            "sql_server://sa@h:1433"
+        ).engine == ENGINE_MSSQL
+        assert parse_connection_string(
+            "sqlsrv://sa@h:1433"
+        ).engine == ENGINE_MSSQL
+
+    def test_postgresql_alias(self):
+        spec = parse_connection_string(
+            "postgresql://postgres:secret@pg.local:5432"
+        )
+        assert spec.engine == ENGINE_PGSQL
+        assert spec.user == "postgres"
+
+    def test_query_params_ignored(self):
+        spec = parse_connection_string(
+            "mysql://user:pass@host:3306?ssl=true&charset=utf8"
+        )
+        assert spec.host == "host"
+        assert spec.port == 3306
+
+    def test_params_without_port(self):
+        spec = parse_connection_string(
+            "mssql://sa:pw@sql.local;connection_timeout=30"
+        )
+        assert spec.host == "sql.local"
+        assert spec.port == 1433
