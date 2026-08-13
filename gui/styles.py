@@ -596,6 +596,37 @@ QComboBox QFrame{
     border-radius:0;
 }
 
+/* --- Селекторы сервер/БД (SQL-консоль) --- */
+QComboBox#combo_select{
+    background:{input_bg};
+    border:1px solid {border};
+    border-radius:8px;
+    color:{text};
+    font-size:13px;
+    padding:4px 30px 4px 10px;
+    min-height:22px;
+    selection-background-color:{sel_bg};
+    selection-color:{sel_text};
+}
+
+QComboBox#combo_select:hover{
+    border-color:{border_strong};
+}
+
+QComboBox#combo_select:focus{
+    border:2px solid {accent};
+}
+
+QComboBox#combo_select:disabled{
+    color:{text_muted};
+    background:{hover_bg};
+}
+
+QComboBox#combo_select::drop-down{
+    border:none;
+    width:26px;
+}
+
 /* --- Автодополнение SQL (QCompleter) --- */
 QListView#CompletionPopup{
     background:{card};

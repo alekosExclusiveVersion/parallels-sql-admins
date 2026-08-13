@@ -20,7 +20,6 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -39,6 +38,7 @@ from gui.sql_completer import SqlCompleter
 from gui.styles import qcolor
 from gui.sql_highlighter import SQLHighlighter
 from gui.widgets.help_icon import HelpIcon
+from gui.widgets.searchable_combo import SearchableComboBox
 
 
 class ComboItemDelegate(QStyledItemDelegate):
@@ -373,28 +373,18 @@ class SqlConsolePanel(QWidget):
 
         scontrols = QHBoxLayout()
 
-        self.cb_server = QComboBox()
-        self.cb_server.setEditable(True)
+        self.cb_server = SearchableComboBox()
+        self.cb_server.setObjectName("combo_select")
         self.cb_server.setMinimumWidth(180)
-        self.cb_server.setSizeAdjustPolicy(
-            QComboBox.AdjustToMinimumContentsLengthWithIcon
-        )
-        self.cb_server.lineEdit().setStyleSheet(
-            "border:none;background:transparent;padding:0;"
-        )
+        self.cb_server.lineEdit().setPlaceholderText("Выберите сервер…")
         self.cb_server.view().setItemDelegate(
             ComboItemDelegate(self.cb_server.view())
         )
 
-        self.cb_database = QComboBox()
-        self.cb_database.setEditable(True)
+        self.cb_database = SearchableComboBox()
+        self.cb_database.setObjectName("combo_select")
         self.cb_database.setMinimumWidth(160)
-        self.cb_database.setSizeAdjustPolicy(
-            QComboBox.AdjustToMinimumContentsLengthWithIcon
-        )
-        self.cb_database.lineEdit().setStyleSheet(
-            "border:none;background:transparent;padding:0;"
-        )
+        self.cb_database.lineEdit().setPlaceholderText("Выберите БД…")
         self.cb_database.view().setItemDelegate(
             ComboItemDelegate(self.cb_database.view())
         )
