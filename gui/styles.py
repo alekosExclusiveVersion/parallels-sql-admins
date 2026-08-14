@@ -548,6 +548,15 @@ QLineEdit#ColumnFilter{
     border-left:none;
 }
 
+QLineEdit#ColumnFilter[colFilterState="empty"],
+QLineEdit#ColumnFilter[colFilterState="nonempty"]{
+    background:{accent_soft};
+    border-color:{accent};
+    border-top:none;
+    border-left:none;
+    color:{accent};
+}
+
 QTreeWidget::item{
     padding:4px 6px;
     border-radius:6px;

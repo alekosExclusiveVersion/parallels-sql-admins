@@ -104,6 +104,47 @@ class FilterHeaderRow(QWidget):
             edit.blockSignals(False)
         self._sync_geometry()
 
+    def clear_column(self, column: int) -> None:
+        """Очищает contains-фильтр одной колонки."""
+        if 0 <= column < len(self._edits):
+            edit = self._edits[column]
+            edit.blockSignals(True)
+            edit.clear()
+            edit.blockSignals(False)
+            edit.setProperty("colFilterState", None)
+            edit.style().unpolish(edit)
+            edit.style().polish(edit)
+
+    def set_column_state(self, column: int, state: str | None) -> None:
+        """Визуальный маркер фильтра «пустые/не пустые» на поле колонки.
+
+        state: "empty" | "nonempty" | None. Задаёт свойство colFilterState,
+        которое стилизуется QSS, и подсказку-плейсхолдер.
+        """
+        if not (0 <= column < len(self._edits)):
+            return
+        edit = self._edits[column]
+        edit.setProperty("colFilterState", state)
+        if state == "empty":
+            edit.setPlaceholderText("только пустые")
+            edit.setToolTip("Показаны только пустые значения колонки")
+        elif state == "nonempty":
+            edit.setPlaceholderText("только не пустые")
+            edit.setToolTip("Показаны только не пустые значения колонки")
+        else:
+            edit.setPlaceholderText("…")
+            edit.setToolTip(f"Фильтр по колонке «{self._header_for(column)}»")
+        edit.style().unpolish(edit)
+        edit.style().polish(edit)
+        edit.update()
+
+    def _header_for(self, column: int) -> str:
+        table = self._table
+        if table is None or not isValid(table):
+            return ""
+        header_item = table.horizontalHeaderItem(column)
+        return header_item.text() if header_item is not None else ""
+
     def _on_text_changed(self) -> None:
         self.filterChanged.emit()
 

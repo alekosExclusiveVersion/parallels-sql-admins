@@ -203,6 +203,10 @@ class ResultTable(QTableWidget):
         # выключено (check/search результаты, мульти-скоуп, несложный SELECT).
         self._editable_columns: set[int] | None = None
 
+        # Фильтры «пустые/не пустые» по колонкам (контекстное меню шапки).
+        self._empty_filter_columns: set[int] = set()
+        self._nonempty_filter_columns: set[int] = set()
+
         self._filter_timer = QTimer(self)
         self._filter_timer.setSingleShot(True)
         self._filter_timer.setInterval(40)
@@ -217,6 +221,10 @@ class ResultTable(QTableWidget):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_table_menu)
         self.itemDoubleClicked.connect(self._table_double_click)
+
+        header = self.horizontalHeader()
+        header.setContextMenuPolicy(Qt.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_header_menu)
 
     # ----------------------------------------------------------
     # Настройка
@@ -233,6 +241,11 @@ class ResultTable(QTableWidget):
 
         self.setAlternatingRowColors(True)
         self.setSortingEnabled(True)
+        # Кастомная шапка (RoundedHeader), установленная через
+        # setHorizontalHeader(), не наследует кликабельность и индикатор
+        # сортировки — Qt применяет их только к штатной шапке.
+        header.setSectionsClickable(True)
+        header.setSortIndicatorShown(True)
         self.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -299,6 +312,7 @@ class ResultTable(QTableWidget):
         self.setSortingEnabled(False)
         self.results_source = None
         self.set_editing_context(None)
+        self._clear_column_filters()
 
     def _fit_header_widths(self, fixed_widths: dict[int, int]) -> None:
         """Растягивает колонки так, чтобы имена заголовков влезали целиком."""
@@ -526,7 +540,7 @@ class ResultTable(QTableWidget):
             texts = []
             for column in range(table.columnCount()):
                 item = table.item(row, column)
-                texts.append((item.text() if item else "").lower())
+                texts.append((item.text().strip() if item else "").lower())
             return texts
 
         def _matches_global(row_texts):
@@ -541,6 +555,20 @@ class ResultTable(QTableWidget):
                         return True
             return False
 
+        def _matches_empty_nonempty(row_texts):
+            """Фильтры «пустые/не пустые» из меню шапки (AND по колонкам)."""
+            for column in self._empty_filter_columns:
+                if column >= len(row_texts):
+                    continue
+                if row_texts[column] != "":
+                    return False
+            for column in self._nonempty_filter_columns:
+                if column >= len(row_texts):
+                    continue
+                if row_texts[column] == "":
+                    return False
+            return True
+
         try:
             for row in range(table.rowCount()):
                 row_texts = _row_texts(row)
@@ -554,6 +582,7 @@ class ResultTable(QTableWidget):
                         not has_column_filters
                         or _matches_columns(row_texts)
                     )
+                    and _matches_empty_nonempty(row_texts)
                 )
 
                 if visible and only_errors and status_index is not None:
@@ -576,6 +605,9 @@ class ResultTable(QTableWidget):
             if self.horizontalHeaderItem(column) is not None
         ]
         self.filter_header.rebuild(headers)
+        # Колонки пересозданы — фильтры «пустые/не пустые» сбрасываем.
+        self._empty_filter_columns.clear()
+        self._nonempty_filter_columns.clear()
 
     def column_index(self, name: str) -> int | None:
         for column in range(self.columnCount()):
@@ -587,6 +619,97 @@ class ResultTable(QTableWidget):
     # ----------------------------------------------------------
     # Контекстное меню
     # ----------------------------------------------------------
+
+    def _show_header_menu(self, pos) -> None:
+        """Контекстное меню шапки: сортировка и фильтр «пустые/не пустые»."""
+        header = self.horizontalHeader()
+        column = header.logicalIndexAt(pos)
+        if column < 0 or column >= self.columnCount():
+            return
+
+        title = f"Колонка {column + 1}"
+        header_item = self.horizontalHeaderItem(column)
+        if header_item is not None and header_item.text():
+            title = header_item.text()
+
+        menu = QMenu(self)
+        menu.setTitle(title)
+        sort_asc = menu.addAction("Сортировать по возрастанию")
+        sort_desc = menu.addAction("Сортировать по убыванию")
+
+        menu.addSeparator()
+
+        filter_empty = menu.addAction("Показать только пустые значения")
+        filter_empty.setCheckable(True)
+        filter_empty.setChecked(column in self._empty_filter_columns)
+
+        filter_nonempty = menu.addAction("Показать только не пустые значения")
+        filter_nonempty.setCheckable(True)
+        filter_nonempty.setChecked(column in self._nonempty_filter_columns)
+
+        clear_column = menu.addAction("Снять фильтр колонки")
+        clear_column.setEnabled(self._column_has_any_filter(column))
+
+        action = menu.exec(header.mapToGlobal(pos))
+
+        if action == sort_asc:
+            self.sortByColumn(column, Qt.AscendingOrder)
+        elif action == sort_desc:
+            self.sortByColumn(column, Qt.DescendingOrder)
+        elif action == filter_empty:
+            self._toggle_empty_filter(column, filter_empty.isChecked())
+        elif action == filter_nonempty:
+            self._toggle_nonempty_filter(column, filter_nonempty.isChecked())
+        elif action == clear_column:
+            self._clear_column_filter(column)
+
+    def _column_has_any_filter(self, column: int) -> bool:
+        filters = self.filter_header.get_filters()
+        return (
+            column in self._empty_filter_columns
+            or column in self._nonempty_filter_columns
+            or (column < len(filters) and bool(filters[column]))
+        )
+
+    def _toggle_empty_filter(self, column: int, enabled: bool) -> None:
+        if enabled:
+            self._empty_filter_columns.add(column)
+            self._nonempty_filter_columns.discard(column)
+        else:
+            self._empty_filter_columns.discard(column)
+        self._refresh_column_marker(column)
+        self.apply_filters()
+
+    def _toggle_nonempty_filter(self, column: int, enabled: bool) -> None:
+        if enabled:
+            self._nonempty_filter_columns.add(column)
+            self._empty_filter_columns.discard(column)
+        else:
+            self._nonempty_filter_columns.discard(column)
+        self._refresh_column_marker(column)
+        self.apply_filters()
+
+    def _clear_column_filter(self, column: int) -> None:
+        """Снимает с колонки фильтр «пустые/не пустые» и contains-фильтр."""
+        self._empty_filter_columns.discard(column)
+        self._nonempty_filter_columns.discard(column)
+        self.filter_header.clear_column(column)
+        self._refresh_column_marker(column)
+        self.apply_filters()
+
+    def _clear_column_filters(self) -> None:
+        self._empty_filter_columns.clear()
+        self._nonempty_filter_columns.clear()
+        self.filter_header.clear_filters()
+
+    def _refresh_column_marker(self, column: int) -> None:
+        if column in self._empty_filter_columns:
+            state = "empty"
+        elif column in self._nonempty_filter_columns:
+            state = "nonempty"
+        else:
+            state = None
+        self.filter_header.set_column_state(column, state)
 
     def _show_table_menu(self, pos) -> None:
         row = self.currentRow()
