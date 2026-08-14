@@ -237,6 +237,34 @@ class MSSQLClient:
     def list_all_databases(self, host: str) -> list[str]:
         return self._filtered_databases(host, with_prefix=False)
 
+    def edit_meta(self, host: str, database: str, table: str):
+        """(первичные ключи, все колонки) таблицы для редактирования ячеек.
+
+        Оба запроса идут на одном соединении из пула (as_dict=True).
+        """
+        with self.connect(host, database) as conn:
+            pk = self.execute_on_connection(
+                conn,
+                "SELECT COL_NAME(ic.object_id, ic.column_id) AS column_name "
+                "FROM sys.indexes i "
+                "JOIN sys.index_columns ic "
+                "  ON i.object_id = ic.object_id AND i.index_id = ic.index_id "
+                "WHERE i.is_primary_key = 1 AND i.object_id = OBJECT_ID(%s) "
+                "ORDER BY ic.key_ordinal",
+                (table,),
+            )
+            cols = self.execute_on_connection(
+                conn,
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_NAME = %s ORDER BY ORDINAL_POSITION",
+                (table,),
+            )
+
+        return (
+            [row["column_name"] for row in pk],
+            [row["COLUMN_NAME"] for row in cols],
+        )
+
     # ----------------------------------------------------------
     # Размеры БД и таблиц
     # ----------------------------------------------------------

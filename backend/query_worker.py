@@ -24,6 +24,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 from common.config import config
 from common.logger import logger
 from common.server_registry import client_for
+from common.sql_editing import parse_select_table
 from common.sql_splitter import split_statements
 
 
@@ -37,6 +38,10 @@ class QueryWorker(QObject):
     result = Signal(list, list, str)
     error = Signal(str)
     databases = Signal(list)
+
+    # Метаданные таблицы для редактирования ячеек Results:
+    # host, database, table, первичные ключи, колонки.
+    edit_meta = Signal(str, str, str, list, list)
 
     started_target = Signal(int, int, str, str)
     result_target = Signal(str, str, list, list, str)
@@ -152,8 +157,7 @@ class QueryWorker(QObject):
                 rows = rows[:row_limit]
 
                 rows = [
-                    ["Null" if value is None else str(value)
-                     for value in row.values()]
+                    list(row.values())
                     for row in rows
                 ]
 
@@ -300,6 +304,28 @@ class QueryWorker(QObject):
             self.stopped.emit(0, 1)
         else:
             self.result.emit(rows, columns, message)
+            self._emit_edit_meta()
+
+    def _emit_edit_meta(self) -> None:
+        """Если запрос — простой SELECT по одной таблице, подтягивает
+        первичные ключи и колонки таблицы для редактирования ячеек."""
+        if self._stop or not self._database:
+            return
+        try:
+            table = parse_select_table(self._sql)
+            if not table:
+                return
+            pk, columns = client_for(self._host).edit_meta(
+                self._host, self._database, table
+            )
+            self.edit_meta.emit(
+                self._host, self._database, table, pk, columns
+            )
+        except Exception as ex:
+            logger.warning(
+                f"{self._host}/{self._database}: метаданные для "
+                f"редактирования не загружены: {ex}"
+            )
 
     def _expand_multi_targets(self) -> list[tuple[int, str, str]]:
         """Разворачивает цели в список (idx, host, db); `*` — все БД."""

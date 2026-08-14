@@ -21,8 +21,10 @@ from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QHeaderView,
+    QInputDialog,
     QLineEdit,
     QMenu,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QCheckBox,
@@ -47,6 +49,46 @@ CHECK_HEADER_WIDTHS = {
      2: 160,
      4: 180,
 }
+
+# Роль: индекс строки в исходном результате (не меняется при сортировке).
+SOURCE_ROW_ROLE = Qt.UserRole + 200
+
+
+class CellEditDelegate(QStyledItemDelegate):
+    """Разрешает редактирование только редактируемым колонкам данных.
+
+    Возврат None из createEditor запрещает начать редактирование
+    (служебные колонки 0-2 и колонки, не совпадающие с реальными
+    колонками таблицы). setModelData не пишет в модель: вместо этого
+    испускается editRequested — значение попадает в ячейку только
+    после подтверждения и успешного UPDATE в главном окне.
+    """
+
+    def __init__(self, table: "ResultTable") -> None:
+        super().__init__(table)
+        self._table = table
+
+    def createEditor(self, parent, option, index):
+        if not self._table.can_edit_cell(index.row(), index.column()):
+            return None
+        return super().createEditor(parent, option, index)
+
+    def setModelData(self, editor, model, index):
+        table = self._table
+        if not table.can_edit_cell(index.row(), index.column()):
+            return
+
+        text = editor.text() if hasattr(editor, "text") else ""
+        new_text = text.strip() if text else ""
+        item = table.item(index.row(), index.column())
+        old_text = item.text() if item is not None else ""
+
+        if new_text == old_text:
+            return
+
+        table.editRequested.emit(
+            index.row(), index.column(), new_text, old_text
+        )
 
 
 class RoundedHeader(QHeaderView):
@@ -114,6 +156,11 @@ class ResultTable(QTableWidget):
     logMessage = Signal(str, str)        # level, message
     visibilityRequested = Signal(bool)   # авто-показ блока Results
 
+    # Редактирование ячеек: запрос на изменение значения / ±1.
+    # editRequested(row, col, new_text, old_text)
+    editRequested = Signal(int, int, str, str)
+    stepRequested = Signal(int)            # delta (+1 / -1)
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("ResultTable")
@@ -127,12 +174,18 @@ class ResultTable(QTableWidget):
         self._only_errors: QCheckBox | None = None
         self._results_source: str | None = None
 
+        # Множество редактируемых колонок данных (>= 3); None — редактирование
+        # выключено (check/search результаты, мульти-скоуп, несложный SELECT).
+        self._editable_columns: set[int] | None = None
+
         self._filter_timer = QTimer(self)
         self._filter_timer.setSingleShot(True)
         self._filter_timer.setInterval(40)
         self._filter_timer.timeout.connect(self.apply_filters)
 
         self._configure()
+
+        self.setItemDelegate(CellEditDelegate(self))
 
         self.filter_header.bind(self)
 
@@ -220,6 +273,7 @@ class ResultTable(QTableWidget):
         self.setRowCount(0)
         self.setSortingEnabled(False)
         self.results_source = None
+        self.set_editing_context(None)
 
     def _fit_header_widths(self, fixed_widths: dict[int, int]) -> None:
         """Растягивает колонки так, чтобы имена заголовков влезали целиком."""
@@ -249,6 +303,7 @@ class ResultTable(QTableWidget):
         self._fit_header_widths(CHECK_HEADER_WIDTHS)
 
         self.results_source = None
+        self.set_editing_context(None)
 
         self.sync_filter_columns()
         self.apply_filters()
@@ -329,9 +384,15 @@ class ResultTable(QTableWidget):
             padded += [""] * (col_count - len(padded))
 
         for col, text in enumerate(padded):
-            item = QTableWidgetItem(str(text))
-            item.setToolTip(str(text))
-            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            display = "Null" if text is None else str(text)
+            item = QTableWidgetItem(display)
+            item.setToolTip(display)
+            item.setData(SOURCE_ROW_ROLE, row)
+
+            flags = item.flags() & ~Qt.ItemIsEditable
+            if col >= 3:
+                flags |= Qt.ItemIsEditable
+            item.setFlags(flags)
 
             if status_col is not None and col == status_col:
                 fg = STATUS_COLORS.get(text)
@@ -348,6 +409,62 @@ class ResultTable(QTableWidget):
 
         self._filter_timer.start()
         self.visibilityRequested.emit(True)
+
+    # ----------------------------------------------------------
+    # Редактирование ячеек
+    # ----------------------------------------------------------
+
+    def set_editing_context(self, editable_columns: set[int] | None) -> None:
+        """Включает/выключает редактирование ячеек результата.
+
+        editable_columns — множество индексов колонок данных (>= 3),
+        разрешённых к редактированию, или None, если редактирование
+        недоступно (check/search результаты, мульти-скоуп, сложный SQL).
+        """
+        self._editable_columns = editable_columns
+
+        if editable_columns:
+            self.setEditTriggers(
+                QAbstractItemView.DoubleClicked
+                | QAbstractItemView.EditKeyPressed
+                | QAbstractItemView.AnyKeyPressed
+            )
+        else:
+            self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+
+    def editing_active(self) -> bool:
+        """Доступно ли редактирование ячеек текущего результата."""
+        return self._editable_columns is not None
+
+    def can_edit_cell(self, row: int, col: int) -> bool:
+        if self._editable_columns is None:
+            return False
+        if col not in self._editable_columns:
+            return False
+        return self.item(row, col) is not None
+
+    def original_row(self, row: int) -> int:
+        """Индекс строки в исходном результате (без сортировки/фильтров)."""
+        item = self.item(row, 0)
+        if item is not None:
+            value = item.data(SOURCE_ROW_ROLE)
+            if value is not None:
+                return int(value)
+        return row
+
+    def keyPressEvent(self, event) -> None:
+        if (
+            self._editable_columns is not None
+            and event.modifiers() == Qt.AltModifier
+            and event.key() in (Qt.Key_Up, Qt.Key_Down)
+        ):
+            row = self.currentRow()
+            col = self.currentColumn()
+            if self.can_edit_cell(row, col):
+                delta = 1 if event.key() == Qt.Key_Down else -1
+                self.stepRequested.emit(delta)
+                return
+        super().keyPressEvent(event)
 
     # ----------------------------------------------------------
     # Фильтры
@@ -458,6 +575,20 @@ class ResultTable(QTableWidget):
 
         menu.addSeparator()
 
+        editing_actions = None
+        if (
+            self._editable_columns is not None
+            and row >= 0
+            and self.can_edit_cell(row, self.currentColumn())
+        ):
+            menu.addSeparator()
+            inc_action = menu.addAction("Увеличить на 1")
+            dec_action = menu.addAction("Уменьшить на 1")
+            edit_action = menu.addAction("Изменить значение…")
+            editing_actions = (inc_action, dec_action, edit_action)
+
+        menu.addSeparator()
+
         clear_action = menu.addAction("Очистить результаты")
 
         action = menu.exec(self.viewport().mapToGlobal(pos))
@@ -473,8 +604,30 @@ class ResultTable(QTableWidget):
             self._copy_cell(row, "Database")
         elif action == export_csv:
             self.export_csv()
+        elif editing_actions is not None:
+            inc_action, dec_action, edit_action = editing_actions
+            if action == inc_action:
+                self.stepRequested.emit(1)
+            elif action == dec_action:
+                self.stepRequested.emit(-1)
+            elif action == edit_action:
+                self._ask_edit_value(row, self.currentColumn())
         elif action == clear_action:
             self.clear_results()
+
+    def _ask_edit_value(self, row: int, col: int) -> None:
+        if not self.can_edit_cell(row, col):
+            return
+        item = self.item(row, col)
+        old_text = item.text() if item is not None else ""
+        new_text, ok = QInputDialog.getText(
+            self,
+            "Изменить значение",
+            "Новое значение:",
+            text=old_text,
+        )
+        if ok and new_text.strip() != old_text:
+            self.editRequested.emit(row, col, new_text.strip(), old_text)
 
     def _copy_row(self, row: int) -> None:
         values = []
@@ -494,6 +647,10 @@ class ResultTable(QTableWidget):
         QApplication.clipboard().setText(item.text() if item else "")
 
     def _table_double_click(self, item: QTableWidgetItem) -> None:
+        if item.column() >= 3:
+            # Двойной клик по ячейке данных — редактирование, а не переход.
+            return
+
         server_index = self.column_index("Server")
         database_index = self.column_index("Database")
 

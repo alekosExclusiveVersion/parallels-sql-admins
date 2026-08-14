@@ -289,7 +289,7 @@ class TestQueryWorkerScript(unittest.TestCase):
         )
 
         self.assertEqual(columns, ["id", "name"])
-        self.assertEqual(rows, [["1", "a"], ["2", "b"]])
+        self.assertEqual(rows, [[1, "a"], [2, "b"]])
         self.assertIn("row(s)", message)
         self.assertEqual(
             [cur.executed for cur in cursors][:2],

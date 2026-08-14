@@ -248,6 +248,34 @@ class PgsqlClient:
             if row.get("db")
         ]
 
+    def edit_meta(self, host: str, database: str, table: str):
+        """(первичные ключи, все колонки) таблицы для редактирования ячеек.
+
+        Оба запроса идут на одном соединении (dict_row).
+        """
+        with self.connect(host, database) as conn:
+            pk = self.execute_on_connection(
+                conn,
+                "SELECT a.attname AS column_name "
+                "FROM pg_index i "
+                "JOIN pg_attribute a "
+                "  ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "
+                "WHERE i.indrelid = %s::regclass AND i.indisprimary "
+                "ORDER BY array_position(i.indkey, a.attnum)",
+                (table,),
+            )
+            cols = self.execute_on_connection(
+                conn,
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = %s ORDER BY ordinal_position",
+                (table,),
+            )
+
+        return (
+            [row["column_name"] for row in pk],
+            [row["column_name"] for row in cols],
+        )
+
     def search_databases(self, host: str, mask: str) -> list[str]:
         mask = mask.strip()
 

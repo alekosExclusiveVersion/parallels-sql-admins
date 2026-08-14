@@ -313,6 +313,32 @@ class MySQLClient:
             if db not in ignore
         )
 
+    def edit_meta(self, host: str, database: str, table: str):
+        """(первичные ключи, все колонки) таблицы для редактирования ячеек.
+
+        Оба запроса идут на одном соединении из пула.
+        """
+        with self.connect(host, database) as conn:
+            pk = self.execute_on_connection(
+                conn,
+                "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s "
+                "AND CONSTRAINT_NAME = 'PRIMARY' ORDER BY ORDINAL_POSITION",
+                (database, table),
+            )
+            cols = self.execute_on_connection(
+                conn,
+                "SELECT COLUMN_NAME FROM information_schema.columns "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s "
+                "ORDER BY ORDINAL_POSITION",
+                (database, table),
+            )
+
+        return (
+            [row["COLUMN_NAME"] for row in pk],
+            [row["COLUMN_NAME"] for row in cols],
+        )
+
     def search_databases(self, host: str, mask: str) -> list[str]:
         """Поиск БД по маске в стиле LIKE (например 'ar_%45').
 

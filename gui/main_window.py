@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+import re
 from datetime import datetime
 
 from PySide6.QtCore import QEvent, Qt, QSize, QTimer
@@ -32,6 +33,7 @@ from backend.query_worker import ALL_DATABASES, QueryWorker
 from backend.db_search_worker import DatabaseSearchWorker
 from backend.db_sizes_worker import DbSizesWorker
 from common.sql_builder import sql_builder
+from common.sql_editing import build_update_sql
 from common.sql_security import is_write_statement
 from common.sql_splitter import split_statements
 from common.logger import logger
@@ -100,6 +102,13 @@ class MainWindow(QWidget):
         self.repository = Repository()
 
         self._last_sql_request = None   # (targets, sql) последнего запроса SQL Console
+
+        # Контекст редактирования ячеек Results (см. _on_edit_meta).
+        self._sql_edit_ctx: dict | None = None
+
+        # Непусто, пока обрабатывается UPDATE ячейки: _show_query_result
+        # перенаправляет результат в _sql_edit_finished, а не рендерит таблицу.
+        self._sql_edit_pending: dict | None = None
 
         theme_styles.bootstrap()
         set_icon_theme(theme_styles.theme_colors())
@@ -183,6 +192,10 @@ class MainWindow(QWidget):
 
         self.query_worker.result.connect(
             self._show_query_result
+        )
+
+        self.query_worker.edit_meta.connect(
+            self._on_edit_meta
         )
 
         self.query_worker.error.connect(
@@ -821,6 +834,34 @@ class MainWindow(QWidget):
 
         filter_layout.addWidget(self.btn_export_all)
 
+        self.btn_step_minus = QToolButton()
+        self.btn_step_minus.setObjectName("btn_icon")
+        self.btn_step_minus.setIcon(icon("minus"))
+        self.btn_step_minus.setIconSize(QSize(16, 16))
+        self.btn_step_minus.setToolTip(
+            "Уменьшить выбранную ячейку на 1 (Alt+↑)"
+        )
+        self.btn_step_minus.setEnabled(False)
+        self.btn_step_minus.clicked.connect(
+            lambda: self._step_selected_cell(-1)
+        )
+
+        filter_layout.addWidget(self.btn_step_minus)
+
+        self.btn_step_plus = QToolButton()
+        self.btn_step_plus.setObjectName("btn_icon")
+        self.btn_step_plus.setIcon(icon("plus"))
+        self.btn_step_plus.setIconSize(QSize(16, 16))
+        self.btn_step_plus.setToolTip(
+            "Увеличить выбранную ячейку на 1 (Alt+↓)"
+        )
+        self.btn_step_plus.setEnabled(False)
+        self.btn_step_plus.clicked.connect(
+            lambda: self._step_selected_cell(1)
+        )
+
+        filter_layout.addWidget(self.btn_step_plus)
+
         filter_layout.addStretch()
 
         table_layout.addLayout(filter_layout)
@@ -1035,6 +1076,18 @@ class MainWindow(QWidget):
 
         self.table.logMessage.connect(
             self.append_log
+        )
+
+        self.table.editRequested.connect(
+            self._apply_cell_edit
+        )
+
+        self.table.stepRequested.connect(
+            self._step_selected_cell
+        )
+
+        self.table.itemSelectionChanged.connect(
+            self._update_edit_buttons
         )
 
         self.panel.runRequested.connect(
@@ -1635,12 +1688,19 @@ class MainWindow(QWidget):
 
     def _sql_target_stopped(self, done, total):
 
+        self._sql_edit_pending = None
+
         self.status_bar.set_sql_status(
             f"Остановлено ({done} из {total})"
         )
         self.panel.set_busy(False)
+        self._update_edit_buttons()
 
     def _show_query_result(self, rows, columns, message):
+
+        if self._sql_edit_pending is not None:
+            self._sql_edit_finished(rows, columns, message)
+            return
 
         host = self.panel.current_host()
         database = self.panel.current_database()
@@ -1658,12 +1718,258 @@ class MainWindow(QWidget):
 
     def _sql_error(self, message):
 
+        self._sql_edit_pending = None
+
         self.status_bar.set_sql_status(f"Ошибка: {message}")
         self.panel.set_busy(False)
 
         self.append_log(
             "ERROR",
             f"SQL: {message}",
+        )
+
+    # ----------------------------------------------------------
+    # Редактирование ячеек Results
+    # ----------------------------------------------------------
+
+    def _on_edit_meta(self, host, database, table, pk, columns):
+
+        self._sql_edit_ctx = {
+            "host": host,
+            "database": database,
+            "table": table,
+            "pk": list(pk),
+            "columns": [c for c in columns if c],
+        }
+
+        # Метаданные приходят в конце запроса: применяем, только если
+        # это всё ещё тот же запрос (одиночная цель текущего запуска).
+        targets = (
+            self._last_sql_request[0]
+            if self._last_sql_request is not None
+            else None
+        )
+        if (
+            targets is not None
+            and len(targets) == 1
+            and targets[0] == (host, database)
+            and self.table.results_source == "sql"
+            and self._sql_edit_ctx["pk"]
+        ):
+            self._apply_editing_context(self._sql_edit_ctx)
+        else:
+            self.table.set_editing_context(None)
+
+        self._update_edit_buttons()
+
+    def _apply_editing_context(self, ctx) -> None:
+
+        result_columns = self._table_result_columns()
+        lower_result = {name.lower(): name for name in result_columns}
+
+        editable = {
+            3 + i
+            for i, name in enumerate(result_columns)
+            if name.lower() in {col.lower() for col in ctx["columns"]}
+        }
+
+        pk_present = all(
+            pk_col.lower() in lower_result for pk_col in ctx["pk"]
+        )
+
+        self.table.set_editing_context(editable if pk_present else None)
+
+    def _table_result_columns(self) -> list[str]:
+        return [
+            self.table.horizontalHeaderItem(col).text()
+            if self.table.horizontalHeaderItem(col) is not None
+            else ""
+            for col in range(3, self.table.columnCount())
+        ]
+
+    def _update_edit_buttons(self) -> None:
+
+        row = self.table.currentRow()
+        col = self.table.currentColumn()
+        enabled = (
+            self.table.editing_active()
+            and row >= 0
+            and self.table.can_edit_cell(row, col)
+        )
+        self.btn_step_minus.setEnabled(enabled)
+        self.btn_step_plus.setEnabled(enabled)
+
+    def _step_selected_cell(self, delta) -> None:
+
+        if self._sql_edit_ctx is None:
+            return
+
+        row = self.table.currentRow()
+        col = self.table.currentColumn()
+
+        if not self.table.can_edit_cell(row, col):
+            return
+
+        item = self.table.item(row, col)
+        if item is None:
+            return
+
+        old_text = item.text()
+        new_text = self._step_numeric(old_text, delta)
+
+        if new_text is None:
+            self.status_bar.set_sql_status(
+                "Значение ячейки не число — ±1 невозможно."
+            )
+            return
+
+        self._apply_cell_edit(row, col, new_text, old_text)
+
+    @staticmethod
+    def _step_numeric(text: str, delta: int) -> str | None:
+
+        text = (text or "").strip()
+
+        if not text:
+            return None
+
+        try:
+            if re.fullmatch(r"[+-]?\d+", text):
+                return str(int(text) + delta)
+            if re.fullmatch(r"[+-]?\d+(\.\d+)?([eE][+-]?\d+)?", text):
+                value = float(text) + delta
+                return str(int(value)) if value == int(value) else str(value)
+        except (ValueError, OverflowError):
+            return None
+
+        return None
+
+    def _apply_cell_edit(self, row, col, new_text, old_text) -> None:
+
+        ctx = self._sql_edit_ctx
+        if ctx is None or col < 3:
+            return
+
+        if self.query_thread.isRunning():
+            self.status_bar.set_sql_status(
+                "Сначала дождитесь завершения текущего запроса."
+            )
+            return
+
+        result_columns = self._table_result_columns()
+        if col - 3 >= len(result_columns):
+            return
+
+        column_name = result_columns[col - 3]
+        lower_result = {name.lower(): name for name in result_columns}
+
+        if column_name.lower() not in {
+            c.lower() for c in ctx["columns"]
+        }:
+            return
+
+        identity_pairs = []
+        for pk_col in ctx["pk"]:
+            pk_name = lower_result.get(pk_col.lower())
+            if pk_name is None:
+                return
+            pk_index = result_columns.index(pk_name) + 3
+            pk_item = self.table.item(row, pk_index)
+            pk_text = pk_item.text() if pk_item is not None else ""
+            if pk_text == "Null":
+                return
+            identity_pairs.append((pk_col, pk_text))
+
+        if not identity_pairs:
+            return
+
+        engine = registry.engine(ctx["host"])
+        sql = build_update_sql(
+            engine,
+            ctx["table"],
+            column_name,
+            new_text,
+            identity_pairs,
+        )
+
+        answer = QMessageBox.question(
+            self,
+            "Подтвердите изменение",
+            (
+                f"Выполнить UPDATE для {ctx['host']}.{ctx['database']}:\n\n"
+                f"{sql}\n\n"
+                f"Старое значение: {old_text}\n"
+                f"Новое значение: {new_text}"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if answer != QMessageBox.Yes:
+            logger.action("Cell edit denied by user")
+            return
+
+        logger.action(
+            f"Cell edit: {ctx['host']}.{ctx['database']}.{ctx['table']} "
+            f"{column_name} = {new_text}"
+        )
+
+        self._sql_edit_pending = {
+            "row": row,
+            "col": col,
+            "new_text": new_text,
+        }
+
+        self.query_worker.set_request(
+            ctx["host"],
+            ctx["database"],
+            sql,
+            1000,
+        )
+        self.panel.set_busy(True)
+        self.status_bar.set_sql_status("Обновление ячейки...")
+        self.query_thread.start()
+
+    def _sql_edit_finished(self, rows, columns, message) -> None:
+
+        pending = self._sql_edit_pending
+        self._sql_edit_pending = None
+
+        self.panel.set_busy(False)
+
+        if pending is None:
+            return
+
+        row = pending["row"]
+        col = pending["col"]
+        new_text = pending["new_text"]
+
+        # Ячейка при коммите редактора не перезаписывалась (см. делегат),
+        # поэтому при ошибке таблица уже остаётся со старым значением.
+        affected = (message or "").strip().lower()
+        if "row(s) affected" not in affected:
+            self.status_bar.set_sql_status(f"Ошибка обновления: {message}")
+            self.append_log("ERROR", f"Cell update failed: {message}")
+            return
+
+        # Найти актуальный item по исходной строке результата (сортировка/
+        # фильтры могли сдвинуть строки, пока шёл запрос).
+        target = self.table.original_row(row)
+        item = self.table.item(row, col)
+        for r in range(self.table.rowCount()):
+            if self.table.original_row(r) == target:
+                item = self.table.item(r, col)
+                break
+
+        if item is not None:
+            item.setText(new_text)
+
+        self.status_bar.set_sql_status(
+            f"Ячейка обновлена: {message}"
+        )
+        self.append_log(
+            "SUCCESS",
+            f"Cell updated: {message}",
         )
 
     def _show_databases(self, names):
