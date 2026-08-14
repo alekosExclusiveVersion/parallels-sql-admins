@@ -45,7 +45,7 @@ _TABLE_SIZES_SQL = """
 SELECT
     CASE WHEN s.name = 'dbo' THEN t.name ELSE s.name + N'.' + t.name END
         AS table_name,
-    SUM(a.total_pages) * 8 * 1024 AS total_bytes
+    SUM(CAST(a.total_pages AS BIGINT)) * 8 * 1024 AS total_bytes
 FROM sys.tables t
 JOIN sys.schemas s ON t.schema_id = s.schema_id
 JOIN sys.indexes i ON t.object_id = i.object_id
@@ -245,7 +245,7 @@ class MSSQLClient:
         sql = """
 SELECT
     DB_NAME(database_id) AS db,
-    SUM(size) * 8 * 1024 AS total_bytes
+    SUM(CAST(size AS BIGINT)) * 8 * 1024 AS total_bytes
 FROM sys.master_files
 WHERE type = 0
 GROUP BY database_id
