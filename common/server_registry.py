@@ -33,6 +33,7 @@ common/server_registry.py
 from __future__ import annotations
 
 import json
+import os
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -309,7 +310,8 @@ class ServerRegistry:
             if self.servers_file.exists():
                 content = self.servers_file.read_text(encoding="utf-8")
                 backup_file.write_text(content, encoding="utf-8")
-                backup_file.chmod(0o600)
+                if os.name != "nt":
+                    backup_file.chmod(0o600)
 
             # Очищаем старые копии
             self._cleanup_backups()
@@ -375,7 +377,8 @@ class ServerRegistry:
                     encoding="utf-8",
                 )
                 # Устанавливаем права 0600
-                self.servers_file.chmod(0o600)
+                if os.name != "nt":
+                    self.servers_file.chmod(0o600)
             except OSError:
                 pass
 

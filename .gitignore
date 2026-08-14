@@ -32,8 +32,7 @@ logs/
 
 # macOS
 .DS_Store
-# Спецификация Parallels SQL Admin
-Parallels SQL Admin.spec
+# Спецификация PyInstaller — кроссплатформенная, коммитится
 
 # Реквизиты серверов (генерируются при первом запуске)
 servers.json

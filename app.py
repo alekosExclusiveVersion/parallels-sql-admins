@@ -4,13 +4,11 @@ import sys
 import traceback
 from pathlib import Path
 
+from common.paths import app_data_dir
+
 
 if getattr(sys, "frozen", False):
-    base = (
-        Path(os.environ.get("HOME", str(Path.home())))
-        / "Library" / "Application Support" / "Parallels SQL Admin"
-    )
-    base.mkdir(parents=True, exist_ok=True)
+    base = app_data_dir()
 
     os.chdir(base)
 
@@ -79,11 +77,7 @@ if __name__ == "__main__":
         # В windowed-сборке PyInstaller traceback уходит в /dev/null,
         # поэтому пишем его в файл рядом с конфигом.
         try:
-            crash_dir = (
-                Path(os.environ.get("HOME", str(Path.home())))
-                / "Library" / "Application Support" / "Parallels SQL Admin"
-            )
-            crash_dir.mkdir(parents=True, exist_ok=True)
+            crash_dir = app_data_dir()
             with open(crash_dir / "crash.log", "w") as f:
                 f.write(traceback.format_exc())
         except Exception:

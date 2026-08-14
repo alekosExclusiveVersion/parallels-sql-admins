@@ -5,6 +5,7 @@ tests/test_key_store.py
 файловый ключ (создание, переиспользование, отказ от перегенерации).
 """
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -91,7 +92,9 @@ class TestFileKey(unittest.TestCase):
         path = self._tmp / "servers.key"
         key = load_or_create_file_key(path)
         self.assertEqual(path.read_bytes(), key)
-        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        # На Windows chmod — no-op, проверяем только права POSIX.
+        if os.name != "nt":
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
     def test_reuses_existing_key(self):
         path = self._tmp / "servers.key"

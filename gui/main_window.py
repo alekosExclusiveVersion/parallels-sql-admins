@@ -2329,7 +2329,7 @@ class MainWindow(QWidget):
         self._theme_group.setExclusive(True)
         self._mode_actions = {}
         for mode, label, tip in (
-            ("auto", "Авто (по системе)", "Следовать за темой macOS"),
+            ("auto", "Авто (по системе)", "Следовать за темой системы"),
             ("light", "Светлая", "Светлая тема"),
             ("dark", "Тёмная", "Тёмная тема"),
         ):

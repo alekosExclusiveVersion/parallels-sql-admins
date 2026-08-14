@@ -13,11 +13,12 @@ gui/styles.py
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QColor, QGuiApplication, QPalette
 from PySide6.QtWidgets import QApplication
+
+from common.paths import app_data_dir
 
 # Цветовые токены светлой темы (Tailwind-подобная палитра slate/blue).
 LIGHT = {
@@ -1148,11 +1149,7 @@ def build_palette(name: str | None = None) -> QPalette:
 # ----------------------------------------------------------
 
 def _settings() -> QSettings:
-    base = (
-        Path.home()
-        / "Library" / "Application Support" / "Parallels SQL Admin"
-    )
-    base.mkdir(parents=True, exist_ok=True)
+    base = app_data_dir()
     return QSettings(str(base / "settings.ini"), QSettings.IniFormat)
 
 

@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, Qt
@@ -294,16 +295,23 @@ _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 
 
 def app_icon() -> QIcon:
-    """Иконка приложения для окна, Dock и переключателя macOS.
+    """Иконка приложения для окна, Dock/панели задач и переключателя.
 
-    Приоритет у ParallelsSQLAdmin.icns — той же иконки, что лежит в бандле
-    и видна в Finder. На macOS QApplication.setWindowIcon() переопределяет
-    иконку в Dock и переключателе, поэтому она должна совпадать с
-    бандл-иконкой, иначе в Dock будет другой рисунок, чем в Finder.
+    macOS: приоритет у ParallelsSQLAdmin.icns — той же иконки, что лежит
+    в бандле и видна в Finder (QApplication.setWindowIcon() переопределяет
+    иконку в Dock, поэтому она должна совпадать с бандл-иконкой).
+    Windows: Qt не читает .icns, поэтому берём многоразмерный .ico.
+    Linux: SVG/PNG (в сборку включены через datas).
     """
     icns_path = _ASSETS_DIR / "ParallelsSQLAdmin.icns"
-    if icns_path.exists():
+    if sys.platform == "darwin" and icns_path.exists():
         icon = QIcon(str(icns_path))
+        if not icon.isNull():
+            return icon
+
+    ico_path = _ASSETS_DIR / "ParallelsSQLAdmin.ico"
+    if sys.platform == "win32" and ico_path.exists():
+        icon = QIcon(str(ico_path))
         if not icon.isNull():
             return icon
 

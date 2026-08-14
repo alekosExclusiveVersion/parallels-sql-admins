@@ -7,8 +7,8 @@ gui/scripts_library.py
 в build_scan_query через sql_builder. Остальные скрипты можно создавать,
 дублировать и запускать тем же образом.
 
-Персистентность — JSON-файл в ~/Library/Application Support/Parallels
-SQL Admin/scripts.json. При первом запуске библиотека заполняется
+Персистентность — JSON-файл в каталоге данных приложения (common/paths.app_data_dir):
+scripts.json. При первом запуске библиотека заполняется
 скриптом проверки по умолчанию.
 """
 
@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QFontDatabase, QKeySequence, QShortcut
@@ -37,10 +36,11 @@ from PySide6.QtWidgets import (
 )
 
 from common.sql_builder import DEFAULT_SCAN_TEMPLATE
+from common.paths import app_data_dir
 from gui.icons import icon
 from gui.widgets.help_icon import HelpIcon
 
-DATA_DIR = Path.home() / "Library" / "Application Support" / "Parallels SQL Admin"
+DATA_DIR = app_data_dir()
 SCRIPTS_FILE = DATA_DIR / "scripts.json"
 
 DEFAULT_SCRIPT_NAME = "Проверка cfg_settings"

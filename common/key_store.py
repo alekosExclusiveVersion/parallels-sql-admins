@@ -23,6 +23,7 @@ import base64
 import hashlib
 import hmac
 import logging
+import os
 import secrets
 from pathlib import Path
 
@@ -106,7 +107,8 @@ def load_or_create_file_key(key_file: Path) -> bytes:
         return key
     key = Fernet.generate_key()
     key_file.write_bytes(key)
-    key_file.chmod(0o600)
+    if os.name != "nt":
+        key_file.chmod(0o600)
     logger.info("Создан новый файл ключа: %s", key_file)
     return key
 
