@@ -492,6 +492,8 @@ class MainWindow(QWidget):
             self,
             "Remove server",
             f"Remove server '{host}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
         )
 
         if answer != QMessageBox.Yes:
@@ -1354,6 +1356,8 @@ class MainWindow(QWidget):
                 self,
                 "Write query",
                 "The query may modify data.\n\nContinue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
             )
 
             if answer != QMessageBox.Yes:
