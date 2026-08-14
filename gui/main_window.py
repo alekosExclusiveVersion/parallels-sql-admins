@@ -2166,6 +2166,10 @@ class MainWindow(QWidget):
         self.table.reset_table()
         self.table.results_source = "sql"
 
+        # Для редактора ячеек Results и «Экспорта всех»: просмотр таблицы
+        # считается последним запросом (одиночная цель).
+        self._last_sql_request = ([(server, database)], sql)
+
         self.status_bar.set_sql_status(
             f"Выполнение {server}.{database}.{table}..."
         )
@@ -2177,6 +2181,7 @@ class MainWindow(QWidget):
             [(server, database)],
             sql,
             1000,
+            table=table,
         )
         self.query_thread.start()
 

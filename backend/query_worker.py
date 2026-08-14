@@ -60,6 +60,7 @@ class QueryWorker(QObject):
         self._statements = []
         self._filepath = ""
         self._stop = False
+        self._table_hint: str | None = None
         self._active_lock = threading.Lock()
         self._active_conns: dict[int, tuple[str, int]] = {}
 
@@ -71,6 +72,7 @@ class QueryWorker(QObject):
         self._row_limit = row_limit
         self._mode = "query"
         self._stop = False
+        self._table_hint = None
         self._reset_active()
 
     def set_databases_request(self, host):
@@ -82,13 +84,17 @@ class QueryWorker(QObject):
         self._stop = False
         self._reset_active()
 
-    def set_multi_request(self, targets, sql, row_limit=1000):
+    def set_multi_request(self, targets, sql, row_limit=1000, table=None):
         self._targets = list(targets)
         self._sql = sql
         self._statements = split_statements(sql or "")
         self._row_limit = row_limit
         self._mode = "multi"
         self._stop = False
+        # Хинт таблицы для просмотра из дерева серверов: SQL использует
+        # квалифицированное имя (db.table), которое parse_select_table
+        # не разбирает — метаданные берём напрямую.
+        self._table_hint = table
         self._reset_active()
 
     def set_export_request(self, targets, sql, filepath):
@@ -104,6 +110,7 @@ class QueryWorker(QObject):
         self._filepath = filepath
         self._mode = "export"
         self._stop = False
+        self._table_hint = None
         self._reset_active()
 
     def stop(self):
@@ -304,28 +311,35 @@ class QueryWorker(QObject):
             self.stopped.emit(0, 1)
         else:
             self.result.emit(rows, columns, message)
-            self._emit_edit_meta()
+            self._emit_edit_meta(self._host, self._database)
 
-    def _emit_edit_meta(self) -> None:
-        """Если запрос — простой SELECT по одной таблице, подтягивает
-        первичные ключи и колонки таблицы для редактирования ячеек."""
-        if self._stop or not self._database:
+    def _emit_edit_meta(self, host: str, database: str | None) -> None:
+        """Подтягивает первичные ключи и колонки таблицы для редактирования.
+
+        Таблица берётся из _table_hint (просмотр таблицы из дерева серверов,
+        SQL с квалифицированным именем) либо парсится из простого SELECT.
+        """
+        if self._stop or not database:
             return
         try:
-            table = parse_select_table(self._sql)
+            table = self._table_hint or parse_select_table(self._sql)
             if not table:
                 return
-            pk, columns = client_for(self._host).edit_meta(
-                self._host, self._database, table
-            )
-            self.edit_meta.emit(
-                self._host, self._database, table, pk, columns
-            )
+            pk, columns = client_for(host).edit_meta(host, database, table)
+            self.edit_meta.emit(host, database, table, pk, columns)
         except Exception as ex:
             logger.warning(
-                f"{self._host}/{self._database}: метаданные для "
-                f"редактирования не загружены: {ex}"
+                f"{host}/{database}: метаданные для редактирования "
+                f"не загружены: {ex}"
             )
+
+    def _emit_edit_meta_for_target(self, host: str, database: str) -> None:
+        """Метаданные для мульти-запроса с единственной целью (таблица из
+        дерева серверов): результат рендерится через result_target, а
+        контекст редактирования — через edit_meta."""
+        if self._stop or len(self._targets) != 1:
+            return
+        self._emit_edit_meta(host, database)
 
     def _expand_multi_targets(self) -> list[tuple[int, str, str]]:
         """Разворачивает цели в список (idx, host, db); `*` — все БД."""
@@ -403,6 +417,8 @@ class QueryWorker(QObject):
                 columns,
                 message,
             )
+
+            self._emit_edit_meta_for_target(host_name, db_name)
 
         executor = ThreadPoolExecutor(
             max_workers=workers,

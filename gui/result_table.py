@@ -90,6 +90,31 @@ class CellEditDelegate(QStyledItemDelegate):
             index.row(), index.column(), new_text, old_text
         )
 
+    def paint(self, painter, option, index) -> None:
+        super().paint(painter, option, index)
+
+        # Подсветка активной (текущей) редактируемой ячейки: пользователь
+        # должен видеть, к какой ячейке применятся ±1/редактирование.
+        table = self._table
+        if table._editable_columns is None:
+            return
+        if (index.row(), index.column()) != (
+            table.currentRow(),
+            table.currentColumn(),
+        ):
+            return
+        if not table.can_edit_cell(index.row(), index.column()):
+            return
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        pen = QPen(QColor(theme_color("accent")))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(option.rect.adjusted(1, 1, -1, -1))
+        painter.restore()
+
 
 class RoundedHeader(QHeaderView):
     """Горизонтальная шапка Results со скруглёнными верхними углами.
@@ -431,6 +456,8 @@ class ResultTable(QTableWidget):
             )
         else:
             self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+
+        self.viewport().update()
 
     def editing_active(self) -> bool:
         """Доступно ли редактирование ячеек текущего результата."""

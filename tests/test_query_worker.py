@@ -466,5 +466,113 @@ class TestQueryWorkerExport(unittest.TestCase):
             os.unlink(path)
 
 
+class FakeMetaClient:
+    """Клиент с edit_meta для метаданных редактирования."""
+
+    def __init__(self):
+        self.calls = []
+
+    def edit_meta(self, host, database, table):
+        self.calls.append((host, database, table))
+        return ["id"], ["id", "name"]
+
+
+class TestQueryWorkerEditMeta(unittest.TestCase):
+    def setUp(self):
+        self.client = FakeMetaClient()
+        patcher = patch.object(qw, "client_for", lambda host: self.client)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _collect_meta(self, worker):
+        emitted = []
+        worker.edit_meta.connect(
+            lambda h, d, t, pk, cols: emitted.append((h, d, t, pk, cols)),
+            Qt.ConnectionType.DirectConnection,
+        )
+        return emitted
+
+    def test_table_hint_overrides_qualified_name(self):
+        worker = qw.QueryWorker()
+        worker.set_multi_request(
+            [("h1", "db1")],
+            "SELECT * FROM `db1`.`users` LIMIT 1000",
+            1000,
+            table="users",
+        )
+        emitted = self._collect_meta(worker)
+
+        worker._emit_edit_meta("h1", "db1")
+
+        self.assertEqual(
+            emitted, [("h1", "db1", "users", ["id"], ["id", "name"])]
+        )
+        self.assertEqual(self.client.calls, [("h1", "db1", "users")])
+
+    def test_qualified_name_without_hint_is_skipped(self):
+        worker = qw.QueryWorker()
+        worker.set_multi_request(
+            [("h1", "db1")],
+            "SELECT * FROM `db1`.`users` LIMIT 1000",
+            1000,
+        )
+        emitted = self._collect_meta(worker)
+
+        worker._emit_edit_meta("h1", "db1")
+
+        self.assertEqual(emitted, [])
+        self.assertEqual(self.client.calls, [])
+
+    def test_plain_select_parsed_as_before(self):
+        worker = qw.QueryWorker()
+        worker.set_request("h1", "db1", "SELECT * FROM users LIMIT 1000", 1000)
+        emitted = self._collect_meta(worker)
+
+        worker._emit_edit_meta("h1", "db1")
+
+        self.assertEqual(emitted, [("h1", "db1", "users", ["id"], ["id", "name"])])
+
+    def test_edit_meta_for_target_single_target(self):
+        worker = qw.QueryWorker()
+        worker.set_multi_request(
+            [("h1", "db1")],
+            "SELECT * FROM `db1`.`users` LIMIT 1000",
+            1000,
+            table="users",
+        )
+        emitted = self._collect_meta(worker)
+
+        worker._emit_edit_meta_for_target("h1", "db1")
+
+        self.assertEqual(
+            emitted, [("h1", "db1", "users", ["id"], ["id", "name"])]
+        )
+
+    def test_edit_meta_for_target_multi_targets_is_noop(self):
+        worker = qw.QueryWorker()
+        worker.set_multi_request(
+            [("h1", "db1"), ("h2", "db2")],
+            "SELECT * FROM `db1`.`users` LIMIT 1000",
+            1000,
+            table="users",
+        )
+        emitted = self._collect_meta(worker)
+
+        worker._emit_edit_meta_for_target("h1", "db1")
+
+        self.assertEqual(emitted, [])
+
+    def test_set_request_resets_table_hint(self):
+        worker = qw.QueryWorker()
+        worker.set_multi_request(
+            [("h1", "db1")],
+            "SELECT * FROM `db1`.`users` LIMIT 1000",
+            1000,
+            table="users",
+        )
+        worker.set_request("h1", "db1", "SELECT * FROM other", 1000)
+        self.assertIsNone(worker._table_hint)
+
+
 if __name__ == "__main__":
     unittest.main()
