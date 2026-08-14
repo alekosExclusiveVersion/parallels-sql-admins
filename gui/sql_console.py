@@ -299,6 +299,7 @@ class SqlConsolePanel(QWidget):
     searchRequested = Signal(str)            # найти БД по маске
     searchStopRequested = Signal()
     catalogRequested = Signal(str, str)      # запросить каталог таблиц/колонок
+    scopeEnabledChanged = Signal(bool)       # доступность скоупа (не busy)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -415,9 +416,6 @@ class SqlConsolePanel(QWidget):
             "Выполнять по всем базам данных каждого сервера"
         )
 
-        run_row.addWidget(self.chk_all_servers)
-        run_row.addWidget(self.chk_all_databases)
-
         run_row.addStretch()
 
         self.btn_run = QPushButton("Выполнить")
@@ -513,6 +511,7 @@ class SqlConsolePanel(QWidget):
         self.btn_stop.setEnabled(busy)
         self.chk_all_servers.setEnabled(not busy)
         self.chk_all_databases.setEnabled(not busy)
+        self.scopeEnabledChanged.emit(not busy)
 
         self.cb_server.setEnabled(
             not busy and not self.chk_all_servers.isChecked()

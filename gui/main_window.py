@@ -1434,7 +1434,7 @@ class MainWindow(QWidget):
             return
         self._sql_refresh_databases()
 
-    def _sql_scope_changed(self, checked):
+    def _sql_scope_changed(self):
         self.panel.cb_server.setEnabled(
             not self.panel.all_servers_checked()
         )
@@ -2451,25 +2451,9 @@ class MainWindow(QWidget):
 
         menu_file.addSeparator()
 
-        act_settings = menu_file.addAction(
-            icon("settings"), "Настройки…"
-        )
-        act_settings.triggered.connect(self._open_settings)
-        act_settings.setShortcut("Ctrl+,")
-
-        menu_file.addSeparator()
-
         act_quit = menu_file.addAction(icon("close"), "Выход")
         act_quit.triggered.connect(self.window().close)
         act_quit.setShortcut("Ctrl+Q")
-
-        # --- Проверка ---
-        menu_check = menu_bar.addMenu("&Проверка")
-        act_run_check = menu_check.addAction(
-            icon("play_arrow"), "Запустить проверку"
-        )
-        act_run_check.triggered.connect(self._run_check)
-        act_run_check.setShortcut("F5")
 
         # --- Поиск ---
         menu_search = menu_bar.addMenu("&Поиск")
@@ -2531,6 +2515,48 @@ class MainWindow(QWidget):
         act_clear_query_log.triggered.connect(self._clear_query_log)
         act_clear_query_log.setShortcut("Ctrl+Shift+L")
         self._rebuild_scripts_menu()
+
+        # --- Настройки ---
+        self._menu_settings = menu_bar.addMenu("&Настройки")
+        menu_settings = self._menu_settings
+
+        act_settings = menu_settings.addAction(
+            icon("settings"), "Настройки…"
+        )
+        act_settings.triggered.connect(self._open_settings)
+        act_settings.setShortcut("Ctrl+,")
+
+        menu_settings.addSeparator()
+
+        self._mass_all_servers = menu_settings.addAction(
+            icon("server"), "Все выбранные серверы"
+        )
+        self._mass_all_servers.setCheckable(True)
+        self._mass_all_servers.setChecked(self.panel.all_servers_checked())
+        self._mass_all_servers.toggled.connect(
+            lambda checked: self.panel.chk_all_servers.setChecked(checked)
+        )
+        self.panel.chk_all_servers.toggled.connect(
+            self._mass_all_servers.setChecked
+        )
+        self.panel.scopeEnabledChanged.connect(
+            self._mass_all_servers.setEnabled
+        )
+
+        self._mass_all_databases = menu_settings.addAction(
+            icon("storage"), "Все базы данных"
+        )
+        self._mass_all_databases.setCheckable(True)
+        self._mass_all_databases.setChecked(self.panel.all_databases_checked())
+        self._mass_all_databases.toggled.connect(
+            lambda checked: self.panel.chk_all_databases.setChecked(checked)
+        )
+        self.panel.chk_all_databases.toggled.connect(
+            self._mass_all_databases.setChecked
+        )
+        self.panel.scopeEnabledChanged.connect(
+            self._mass_all_databases.setEnabled
+        )
 
         # --- Вид ---
         menu_view = menu_bar.addMenu("&Вид")
