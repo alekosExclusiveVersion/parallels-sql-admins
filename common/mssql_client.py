@@ -228,7 +228,11 @@ class MSSQLClient:
         return sorted(names)
 
     def list_databases(self, host: str) -> list[str]:
-        return self._filtered_databases(host, with_prefix=True)
+        # Префикс database_prefix (например 'ar_') — MySQL-конвенция
+        # именования; для MSSQL он не применяется, иначе список БД
+        # в SQL-консоли оказывается пустым. Исключаются только системные
+        # и ignore_databases.
+        return self._filtered_databases(host, with_prefix=False)
 
     def list_all_databases(self, host: str) -> list[str]:
         return self._filtered_databases(host, with_prefix=False)
