@@ -17,9 +17,11 @@ Editable QComboBox с поиском по любому вхождению (subst
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QEvent, QTimer, Qt
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QComboBox, QCompleter
+
+from gui.icons import engine_icon_color, icon
 
 
 def _without_tld(text: str) -> str:
@@ -54,7 +56,8 @@ class SearchComboCompleter(QCompleter):
     """Попап-фильтр для SearchableComboBox.
 
     Модель пересобирается на каждый ввод из переданных пунктов
-    (display, host), отбираются только совпадающие по любому вхождению.
+    (display, host[, engine]), отбираются только совпадающие по любому
+    вхождению. Для пунктов с движком ставится фирменная иконка.
     """
 
     def __init__(self, parent=None) -> None:
@@ -70,13 +73,21 @@ class SearchComboCompleter(QCompleter):
         popup.setStyleSheet("")
         popup.setUniformItemSizes(True)
 
-    def refresh(self, items: list[tuple[str, str]], query: str) -> None:
-        """Перестраивает список подсказок под запрос (substring по Name/host)."""
+    def refresh(self, items: list[tuple], query: str, icon_name: str = "server") -> None:
+        """Перестраивает список подсказок под запрос (substring по Name/host).
+
+        Элементы — пары (display, host) либо тройки (display, host, engine):
+        для движка пункту ставится фирменная иконка icon_name в цвете движка.
+        """
         self._model.clear()
-        for display, host in items:
+        for entry in items:
+            display, host = entry[0], entry[1]
+            engine = entry[2] if len(entry) > 2 else ""
             if contains_match(query, display, host):
                 item = QStandardItem(display)
                 item.setData(host, Qt.UserRole)
+                if engine:
+                    item.setIcon(icon(icon_name, 16, engine_icon_color(engine)))
                 self._model.appendRow(item)
 
 
@@ -94,23 +105,51 @@ class SearchableComboBox(QComboBox):
         self.setInsertPolicy(QComboBox.NoInsert)
         self.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
 
+        self._item_icon_name = "server"
         self._completer = SearchComboCompleter(self)
         self.setCompleter(self._completer)
         self._completer.activated.connect(self._on_activated)
         self.lineEdit().textChanged.connect(self._on_text_changed)
+        # Клик по полю открывает выпадающий список целиком (даже когда
+        # значение уже выбрано); ввод текста продолжает фильтровать.
+        self.lineEdit().installEventFilter(self)
 
     # ----------------------------------------------------------
     # Внутреннее
     # ----------------------------------------------------------
 
-    def _combo_items(self) -> list[tuple[str, str]]:
+    def eventFilter(self, obj, event) -> bool:
+        if (
+            obj is self.lineEdit()
+            and event.type() == QEvent.MouseButtonPress
+            and event.button() == Qt.LeftButton
+        ):
+            self._show_popup_on_click()
+        return super().eventFilter(obj, event)
+
+    def _show_popup_on_click(self) -> None:
+        """Показывает весь список пунктов при клике на поле.
+
+        Сброс фильтра нужен, чтобы при уже выбранном значении клик
+        показывал полный список для выбора, а не единственный пункт,
+        совпадающий с текущим текстом.
+        """
+        if self.count():
+            self._completer.refresh(self._combo_items(), "", self._item_icon_name)
+            self._completer.complete()
+
+    def _combo_items(self) -> list[tuple]:
         return [
-            (self.itemText(i), str(self.itemData(i) or ""))
+            (
+                self.itemText(i),
+                str(self.itemData(i) or ""),
+                str(self.itemData(i, Qt.UserRole + 1) or ""),
+            )
             for i in range(self.count())
         ]
 
     def _on_text_changed(self, text: str) -> None:
-        self._completer.refresh(self._combo_items(), text)
+        self._completer.refresh(self._combo_items(), text, self._item_icon_name)
         if not text or not self.isVisible():
             self._completer.popup().hide()
             return
@@ -138,7 +177,7 @@ class SearchableComboBox(QComboBox):
         (например, при обновлении списка серверов/БД), чтобы открытый
         попап не показывал устаревший набор.
         """
-        self._completer.refresh(self._combo_items(), self.currentText())
+        self._completer.refresh(self._combo_items(), self.currentText(), self._item_icon_name)
 
     def _on_activated(self, text: str) -> None:
         for i in range(self.count()):

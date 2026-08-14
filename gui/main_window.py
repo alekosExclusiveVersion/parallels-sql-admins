@@ -44,7 +44,9 @@ from common.key_store import (
     WrongMasterPasswordError,
 )
 from common.server_registry import (
+    ENGINE_MSSQL,
     ENGINE_MYSQL,
+    ENGINE_PGSQL,
     ServerSpec,
     build_select_sql,
     registry,
@@ -65,6 +67,30 @@ from gui.server_dialog import ServerDialog
 from gui.master_password_dialog import MasterPasswordDialog
 from gui.settings_dialog import SettingsDialog
 from gui.connection_strings_dialog import ConnectionStringsDialog
+
+
+# Потоки, которые не удалось остановить к моменту shutdown(): отвязываем их
+# от дерева виджетов и держим здесь, чтобы деструктор QMainWindow не удалил
+# живой QThread (иначе Qt рвёт процесс через qFatal при выходе).
+_leaked_threads: list = []
+
+# Порядок групп в списке серверов: сначала по типу (движку), затем внутри
+# группы по алфавиту. Группы отсортированы по имени движка (mssql < mysql
+# < pgsql); неизвестный движок уходит в конец.
+_ENGINE_SORT_ORDER = {
+    ENGINE_MSSQL: 0,
+    ENGINE_MYSQL: 1,
+    ENGINE_PGSQL: 2,
+}
+
+
+def sort_server_labels(labels: list[tuple]) -> list[tuple]:
+    """Сортирует список серверов (display, host, engine):
+    сначала по типу сервера (движку), затем по алфавиту внутри группы."""
+    return sorted(
+        labels,
+        key=lambda t: (_ENGINE_SORT_ORDER.get(t[2], 99), t[0].lower()),
+    )
 
 
 class MainWindow(QWidget):
@@ -401,6 +427,8 @@ class MainWindow(QWidget):
             (spec.ui_label(), spec.host, spec.engine)
             for spec in servers
         ]
+        # Сначала по типу сервера (движку), внутри группы — по алфавиту.
+        labels = sort_server_labels(labels)
 
         self.servers_tree.set_servers(labels)
 
@@ -1938,6 +1966,24 @@ class MainWindow(QWidget):
                     if not thr.wait(5000):
                         thr.terminate()
                         thr.wait(2000)
+            except Exception:
+                pass
+
+        # Последний рубеж: если поток всё ещё жив (например, блокировка в
+        # системном вызове, которую terminate не смог прервать), отвязываем
+        # его от виджетов, чтобы уничтожение QMainWindow не трогало QThread.
+        for thr in (
+            self.thread,
+            self.query_thread,
+            self.search_thread,
+            self.sizes_thread,
+            self.export_thread,
+            self.completion_thread,
+        ):
+            try:
+                if thr.isRunning():
+                    thr.setParent(None)
+                    _leaked_threads.append(thr)
             except Exception:
                 pass
 

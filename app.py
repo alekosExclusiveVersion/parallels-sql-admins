@@ -48,6 +48,17 @@ def main() -> int:
 
     rc = qt_app.exec()
 
+    # Гарантия остановки фоновых потоков. Если quit пришёл в обход
+    # closeEvent/aboutToQuit (например, закрытие приложения во время
+    # модального диалога), shutdown() должен отработать всё равно: иначе
+    # постоянно живой sizes_thread окажется жив в момент уничтожения
+    # QMainWindow и Qt оборвёт процесс через qFatal. Idempotent: повторный
+    # вызов пропускается флагом _shutdown_done.
+    try:
+        window.ui.shutdown()
+    except Exception:
+        pass
+
     # Явно удаляем Python-обёртки Qt-виджетов до выхода из интерпретатора:
     # иначе PySide6 при atexit удаляет C++-объекты повторно и падает
     # с SIGSEGV (известная проблема PySide6 6.11 в frozen-сборках).

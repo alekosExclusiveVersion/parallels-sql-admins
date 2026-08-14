@@ -220,6 +220,22 @@ _ICONS = {
 _ICON_THEME: dict = {}
 
 
+_ENGINE_ICON_COLORS = {
+    "mysql": "@mysql_brand",
+    "mssql": "@mssql_brand",
+    "pgsql": "@pgsql_brand",
+}
+
+
+def engine_icon_color(engine: str) -> str:
+    """Токен темы для фирменного цвета иконки движка СУБД.
+
+    MySQL — синий, MSSQL — красный, PostgreSQL — синий (#336791);
+    для неизвестного движка — акцент темы (как в дереве серверов).
+    """
+    return _ENGINE_ICON_COLORS.get(str(engine or "").lower(), "@icon_accent")
+
+
 def set_icon_theme(colors: dict) -> None:
     """Устанавливает палитру иконок из цветовых токенов текущей темы."""
     _ICON_THEME.clear()

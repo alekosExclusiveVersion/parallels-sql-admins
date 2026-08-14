@@ -417,11 +417,14 @@ class TestServersTree(unittest.TestCase):
     # Сортировка серверов, БД и таблиц
     # ----------------------------------------------------------
 
-    def test_sorting_is_enabled(self):
+    def test_auto_sorting_is_disabled(self):
         tree = ServersTree()
-        self.assertTrue(tree.isSortingEnabled())
+        self.assertFalse(tree.isSortingEnabled())
 
-    def test_servers_are_sorted(self):
+    def test_servers_keep_insertion_order(self):
+        # Группировка по движку/алфавиту выполняется наверху
+        # (MainWindow._load_servers → sort_server_labels), дерево сохраняет
+        # переданный порядок.
         tree = ServersTree()
         tree.set_servers([
             ("Zeta", "z.example.com"),
@@ -434,7 +437,7 @@ class TestServersTree(unittest.TestCase):
             for i in range(tree.topLevelItemCount())
         ]
 
-        self.assertEqual(texts, sorted(texts))
+        self.assertEqual(texts, ["Zeta", "Alpha", "Mid"])
 
     def test_databases_are_sorted(self):
         tree = ServersTree()

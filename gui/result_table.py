@@ -162,6 +162,8 @@ class ResultTable(QTableWidget):
         self.setWordWrap(False)
         self.setCornerButtonEnabled(False)
         self.setFocusPolicy(Qt.StrongFocus)
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
 
     def focusInEvent(self, event) -> None:
         super().focusInEvent(event)

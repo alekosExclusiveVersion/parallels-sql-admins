@@ -66,11 +66,11 @@ class ServersTree(QTreeWidget):
         self.setExpandsOnDoubleClick(False)
         self.setIndentation(18)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
-        # Автоматическая сортировка серверов, БД и таблиц по имени.
-        # Заглушки «…/Загрузка…/Нет БД/Нет таблиц» всегда единственные дети
-        # своих узлов, поэтому в отсортированный список не попадают.
-        self.setSortingEnabled(True)
+        # Автосортировка выключена: серверы приходят уже отсортированными
+        # (сначала по движку, затем по алфавиту — MainWindow._load_servers),
+        # а БД/таблицы сортируются явно после наполнения (sortChildren).
         # По умолчанию QHeaderView сортирует по убыванию — включаем по возрастанию.
+        self.setSortingEnabled(False)
         self.header().setSortIndicator(0, Qt.AscendingOrder)
 
         header = self.header()
@@ -79,6 +79,8 @@ class ServersTree(QTreeWidget):
 
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
 
         self.itemExpanded.connect(self._tree_item_expanded)
         self.itemDoubleClicked.connect(self._double_click)
@@ -271,6 +273,7 @@ class ServersTree(QTreeWidget):
                 db_item.setData(0, Qt.UserRole, db_name)
                 db_item.setIcon(0, icon("storage", 22, "@icon_secondary"))
                 QTreeWidgetItem(db_item, [_PLACEHOLDER])
+            server_item.sortChildren(0, Qt.AscendingOrder)
             break
 
     def apply_sizes(self, server: str, sizes: dict) -> None:
@@ -314,6 +317,7 @@ class ServersTree(QTreeWidget):
                     db_item.setData(0, Qt.UserRole, db_name)
                     db_item.setIcon(0, icon("storage", 22, "@icon_secondary"))
                     QTreeWidgetItem(db_item, [_PLACEHOLDER])
+                server_item.sortChildren(0, Qt.AscendingOrder)
                 break
 
             for db_index in range(server_item.childCount()):
@@ -351,6 +355,7 @@ class ServersTree(QTreeWidget):
             )
             table_item.setData(0, Qt.UserRole, table_name)
             table_item.setIcon(0, icon("table", 22, "@icon_success"))
+        db_item.sortChildren(0, Qt.AscendingOrder)
 
     def apply_tables(self, server: str, database: str, tables: list) -> None:
         for index in range(self.topLevelItemCount()):

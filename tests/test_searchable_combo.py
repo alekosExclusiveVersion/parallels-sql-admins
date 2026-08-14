@@ -11,6 +11,8 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtGui import QMouseEvent, QPointingDevice
 from PySide6.QtWidgets import QApplication
 
 from gui.widgets.searchable_combo import SearchableComboBox, contains_match
@@ -121,6 +123,76 @@ class SearchableComboBoxTest(unittest.TestCase):
         combo._on_activated("Prod-02")
         self.assertEqual(combo.currentIndex(), 1)
         self.assertEqual(combo.itemData(combo.currentIndex()), "p5g21.tradesoft.ru")
+
+    def _make_with_engines(self):
+        combo = SearchableComboBox()
+        combo.addItem("MSSQL box", "aisql.tradesoft.corp\\supportsql")
+        combo.setItemData(0, "mssql", Qt.UserRole + 1)
+        combo.addItem("MySQL box", "kz1.tradesoft.ru")
+        combo.setItemData(1, "mysql", Qt.UserRole + 1)
+        combo.addItem("No engine", "plain.local")
+        return combo
+
+    def test_combo_items_include_engine(self):
+        combo = self._make_with_engines()
+        self.assertEqual(
+            combo._combo_items(),
+            [
+                ("MSSQL box", "aisql.tradesoft.corp\\supportsql", "mssql"),
+                ("MySQL box", "kz1.tradesoft.ru", "mysql"),
+                ("No engine", "plain.local", ""),
+            ],
+        )
+
+    def test_engine_icon_set_on_popup_item(self):
+        combo = self._make_with_engines()
+        combo._on_text_changed("")
+        model = combo._completer.model()
+        icon_by_text = {
+            model.item(i).text(): model.item(i).icon() for i in range(model.rowCount())
+        }
+        self.assertFalse(icon_by_text["MSSQL box"].isNull())
+        self.assertFalse(icon_by_text["MySQL box"].isNull())
+        self.assertTrue(icon_by_text["No engine"].isNull())
+
+    def test_refresh_accepts_two_and_three_tuples(self):
+        combo = self._make()
+        combo._completer.refresh([("A", "h1"), ("B", "h2", "mysql")], "")
+        self.assertEqual(self._rows(combo), ["A", "B"])
+        model = combo._completer.model()
+        self.assertFalse(model.item(1).icon().isNull())
+
+    def _click_field(self, combo):
+        event = QMouseEvent(
+            QEvent.MouseButtonPress,
+            QPointF(10, 5),
+            QPointF(10, 5),
+            Qt.LeftButton,
+            Qt.LeftButton,
+            Qt.NoModifier,
+            QPointingDevice.primaryPointingDevice(),
+        )
+        QApplication.sendEvent(combo.lineEdit(), event)
+
+    def test_click_on_empty_field_shows_all_items(self):
+        combo = self._make()
+        self._click_field(combo)
+        self.assertTrue(combo._completer.popup().isVisible())
+        self.assertEqual(self._rows(combo), ["Prod-01", "Prod-02", "Dev"])
+
+    def test_click_with_selected_value_shows_all_items(self):
+        combo = self._make()
+        combo.setCurrentIndex(0)
+        self._click_field(combo)
+        self.assertTrue(combo._completer.popup().isVisible())
+        self.assertEqual(self._rows(combo), ["Prod-01", "Prod-02", "Dev"])
+
+    def test_click_then_typing_filters(self):
+        combo = self._make()
+        self._click_field(combo)
+        self.assertEqual(self._rows(combo), ["Prod-01", "Prod-02", "Dev"])
+        combo._on_text_changed("dev")
+        self.assertEqual(self._rows(combo), ["Dev"])
 
 
 if __name__ == "__main__":

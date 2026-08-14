@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 
 from common.sql_completion import analyze as analyze_completion
 from common.sql_splitter import statement_at
-from gui.icons import icon
+from gui.icons import engine_icon_color, icon
 from gui.sql_completer import SqlCompleter
 from gui.styles import qcolor
 from gui.sql_highlighter import SQLHighlighter
@@ -302,6 +302,7 @@ class SqlConsolePanel(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self._server_engines: dict[str, str] = {}
         self._build_ui()
 
     # ----------------------------------------------------------
@@ -383,6 +384,7 @@ class SqlConsolePanel(QWidget):
 
         self.cb_database = SearchableComboBox()
         self.cb_database.setObjectName("combo_select")
+        self.cb_database._item_icon_name = "storage"
         self.cb_database.setMinimumWidth(160)
         self.cb_database.lineEdit().setPlaceholderText("Выберите БД…")
         self.cb_database.view().setItemDelegate(
@@ -525,10 +527,19 @@ class SqlConsolePanel(QWidget):
     def set_databases(self, names: list[str]) -> None:
         current = self.cb_database.currentText()
 
+        engine = self._server_engines.get(self.current_host(), "")
+        db_icon = icon("storage", 16, engine_icon_color(engine)) if engine else None
+
         self.cb_database.blockSignals(True)
 
         self.cb_database.clear()
-        self.cb_database.addItems(names)
+        for name in names:
+            self.cb_database.addItem(name)
+            index = self.cb_database.count() - 1
+            if engine:
+                self.cb_database.setItemData(index, engine, Qt.UserRole + 1)
+            if db_icon is not None:
+                self.cb_database.setItemIcon(index, db_icon)
 
         # Восстанавливаем выбранную БД только если она есть на новом сервере,
         # иначе очищаем выбор, чтобы не оставалась несуществующая БД.
@@ -598,10 +609,12 @@ class SqlConsolePanel(QWidget):
         Элемент — строка-хост либо кортеж (display_name, host) или
         (display_name, host, engine): отображается Name, host хранится
         в данных пункта и используется как цель подключения
-        (current_host()). Движок не используется — комбо без иконок.
+        (current_host()). Движок хранится отдельным ролью и задаёт
+        фирменную иконку пункта (как в дереве серверов).
         """
         previous = self.current_host()
 
+        self._server_engines.clear()
         self.cb_server.blockSignals(True)
 
         self.cb_server.clear()
@@ -609,9 +622,20 @@ class SqlConsolePanel(QWidget):
         for entry in servers:
             if isinstance(entry, (tuple, list)):
                 display, host = entry[0], entry[1]
+                engine = entry[2] if len(entry) > 2 else ""
             else:
                 display = host = entry
+                engine = ""
             self.cb_server.addItem(display, host)
+            if engine:
+                self.cb_server.setItemData(
+                    self.cb_server.count() - 1, engine, Qt.UserRole + 1
+                )
+                self.cb_server.setItemIcon(
+                    self.cb_server.count() - 1,
+                    icon("server", 16, engine_icon_color(engine)),
+                )
+            self._server_engines[host] = engine
 
         if previous:
             self._select_server_by_host(previous)
