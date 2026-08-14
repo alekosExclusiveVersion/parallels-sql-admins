@@ -1180,11 +1180,21 @@ def load_security_backend() -> str:
     settings = _settings()
     value = str(settings.value("security/backend", "master_password"))
     return value if value in ("master_password", "file_key") else "master_password"
-
-
 def save_security_backend(kind: str) -> None:
     settings = _settings()
     settings.setValue("security/backend", kind)
+    settings.sync()
+
+
+def load_scope_checkboxes_visible() -> bool:
+    """Показывать ли чекбоксы скоупа «все серверы/все БД» в консоли."""
+    settings = _settings()
+    return str(settings.value("console/show_scope_checkboxes", "0")) == "1"
+
+
+def save_scope_checkboxes_visible(visible: bool) -> None:
+    settings = _settings()
+    settings.setValue("console/show_scope_checkboxes", "1" if visible else "0")
     settings.sync()
 
 

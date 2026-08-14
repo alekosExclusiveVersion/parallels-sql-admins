@@ -410,11 +410,16 @@ class SqlConsolePanel(QWidget):
         self.chk_all_servers.setToolTip(
             "Выполнять на серверах, выбранных в списке"
         )
+        self.chk_all_servers.setVisible(False)
 
         self.chk_all_databases = QCheckBox("Все базы данных")
         self.chk_all_databases.setToolTip(
             "Выполнять по всем базам данных каждого сервера"
         )
+        self.chk_all_databases.setVisible(False)
+
+        run_row.addWidget(self.chk_all_servers)
+        run_row.addWidget(self.chk_all_databases)
 
         run_row.addStretch()
 
@@ -522,6 +527,11 @@ class SqlConsolePanel(QWidget):
 
     def set_stop_enabled(self, enabled: bool) -> None:
         self.btn_stop.setEnabled(enabled)
+
+    def set_scope_checkboxes_visible(self, visible: bool) -> None:
+        """Показывает/скрывает чекбоксы скоупа в панели консоли."""
+        self.chk_all_servers.setVisible(visible)
+        self.chk_all_databases.setVisible(visible)
 
     def set_databases(self, names: list[str]) -> None:
         current = self.cb_database.currentText()

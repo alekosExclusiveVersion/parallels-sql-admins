@@ -427,6 +427,10 @@ class MainWindow(QWidget):
         dialog.exec()
         self._load_servers()
 
+    def _toggle_scope_checkboxes(self, visible: bool) -> None:
+        self.panel.set_scope_checkboxes_visible(visible)
+        theme_styles.save_scope_checkboxes_visible(visible)
+
     def _load_servers(self):
 
         servers = self.repository.load_servers()
@@ -2525,6 +2529,18 @@ class MainWindow(QWidget):
         )
         act_settings.triggered.connect(self._open_settings)
         act_settings.setShortcut("Ctrl+,")
+
+        menu_settings.addSeparator()
+
+        self._show_scope_cbs = menu_settings.addAction(
+            icon("check_circle"), "Показывать чекбоксы скоупа в консоли"
+        )
+        self._show_scope_cbs.setCheckable(True)
+        self._show_scope_cbs.setChecked(
+            theme_styles.load_scope_checkboxes_visible()
+        )
+        self._show_scope_cbs.toggled.connect(self._toggle_scope_checkboxes)
+        self.panel.set_scope_checkboxes_visible(self._show_scope_cbs.isChecked())
 
         menu_settings.addSeparator()
 
