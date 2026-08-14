@@ -7,7 +7,12 @@
 #
 # Windows/Linux-сборки выполняются в GitHub Actions (см. build.yml):
 # PyInstaller не поддерживает кросс-компиляцию.
+import os
 import sys
+
+# SPECPATH вставляет PyInstaller: каталог со spec-файлом (корень репозитория).
+# Без него импорт пакета common на уровне spec падает в CI (нет PYTHONPATH).
+sys.path.insert(0, os.path.abspath(SPECPATH))
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 

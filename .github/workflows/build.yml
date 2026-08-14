@@ -1,5 +1,8 @@
 name: Build
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
   push:
@@ -45,6 +48,23 @@ jobs:
       - name: Build
         run: pyinstaller "Parallels SQL Admin.spec" --noconfirm
 
+      - name: Verify build output (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'dist/Parallels SQL Admin/Parallels SQL Admin.exe')) {
+            Write-Error 'Parallels SQL Admin.exe not found in dist'
+            exit 1
+          }
+          Get-ChildItem 'dist/Parallels SQL Admin' | Select-Object Name
+
+      - name: Verify build output (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          test -x "dist/Parallels SQL Admin/Parallels SQL Admin" \
+            || { echo "binary not found in dist" >&2; exit 1; }
+          ls -la "dist/Parallels SQL Admin"
+
       - name: Smoke test
         shell: bash
         env:
@@ -61,6 +81,18 @@ jobs:
             kill "$PID"
           else
             echo "ERROR: app exited early"
+            if [ -n "$APPDATA" ] && [ -f "$APPDATA/Parallels SQL Admin/crash.log" ]; then
+              echo "--- crash.log (Windows) ---"
+              cat "$APPDATA/Parallels SQL Admin/crash.log"
+            fi
+            if [ -n "$XDG_CONFIG_HOME" ] && [ -f "$XDG_CONFIG_HOME/Parallels SQL Admin/crash.log" ]; then
+              echo "--- crash.log (Linux, XDG) ---"
+              cat "$XDG_CONFIG_HOME/Parallels SQL Admin/crash.log"
+            fi
+            if [ -f "$HOME/.config/Parallels SQL Admin/crash.log" ]; then
+              echo "--- crash.log (Linux, HOME) ---"
+              cat "$HOME/.config/Parallels SQL Admin/crash.log"
+            fi
             exit 1
           fi
 
@@ -78,6 +110,27 @@ jobs:
           mkdir -p release
           tar -C dist -czf "release/${{ matrix.artifact }}.${{ matrix.ext }}" \
             "Parallels SQL Admin"
+
+      - name: Verify archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          tar -tf 'release/ParallelsSQLAdmin-windows.zip' > zip_list.txt
+          Get-Content zip_list.txt
+          if (-not (Select-String -Path zip_list.txt -Pattern 'Parallels SQL Admin\.exe' -Quiet)) {
+            Write-Error 'Parallels SQL Admin.exe not found in archive'
+            exit 1
+          }
+
+      - name: Verify archive (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          tar -tzf "release/ParallelsSQLAdmin-linux.tar.gz" > tar_list.txt
+          cat tar_list.txt
+          if ! grep -q 'Parallels SQL Admin/Parallels SQL Admin$' tar_list.txt; then
+            echo "binary not found in archive" >&2
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
