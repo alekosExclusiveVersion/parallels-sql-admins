@@ -315,17 +315,7 @@ def app_icon() -> QIcon:
         if not icon.isNull():
             return icon
 
-    svg_path = _ASSETS_DIR / "app_icon.svg"
     png_path = _ASSETS_DIR / "app_icon.png"
-
-    if svg_path.exists():
-        renderer = QSvgRenderer(str(svg_path))
-        pixmap = QPixmap(256, 256)
-        pixmap.fill(Qt.transparent)
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
-        return QIcon(pixmap)
 
     if png_path.exists():
         return QIcon(str(png_path))

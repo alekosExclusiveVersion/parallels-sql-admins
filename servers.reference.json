@@ -1,0 +1,12 @@
+[
+    {"host": "p7ru1.tradesoft.ru", "engine": "mysql", "port": 0, "name": ""},
+    {"host": "p7ru2.tradesoft.ru", "engine": "mysql", "port": 0, "name": ""},
+    {"host": "p7ru3.tradesoft.ru", "engine": "mysql", "port": 0, "name": ""},
+    {"host": "p7ru4.tradesoft.ru", "engine": "mysql", "port": 0, "name": ""},
+    {"host": "p7ru5.tradesoft.ru", "engine": "mysql", "port": 0, "name": ""},
+    {"host": "p7ru8.tradesoft.ru", "engine": "mysql", "port": 0, "name": ""},
+    {"host": "p5g21.tradesoft.ru", "engine": "mysql", "port": 0, "name": ""},
+    {"host": "p5g25.tradesoft.ru", "engine": "mysql", "port": 0, "name": ""},
+    {"host": "p5g29.tradesoft.ru", "engine": "mysql", "port": 0, "name": ""},
+    {"host": "ext4.tradesoft.ru", "engine": "mysql", "port": 0, "name": ""}
+]

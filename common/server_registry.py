@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -202,7 +203,7 @@ class ServerRegistry:
                 return list(self._specs)
 
             if not self.servers_file.exists():
-                self._migrate_from_txt()
+                self._migrate_from_reference()
                 return list(self._specs)
 
             try:
@@ -262,10 +263,109 @@ class ServerRegistry:
 
             self._specs = specs
             self._loaded = True
+
+            added = self._merge_reference_hosts()
+            if added:
+                logger.info(
+                    f"Добавлено {added} новых серверов из эталона "
+                    "(servers.reference.json)"
+                )
+
             return list(self._specs)
 
+    def _reference_file(self) -> Path:
+        """Путь к эталону серверов (servers.reference.json).
+
+        В frozen-сборке файл лежит внутри бандла (sys._MEIPASS),
+        в dev-режиме — в корне репозитория.
+        """
+        if getattr(sys, "frozen", False):
+            return Path(sys._MEIPASS) / "servers.reference.json"
+        return Path(__file__).resolve().parent.parent / "servers.reference.json"
+
+    def _parse_reference(self) -> list[ServerSpec]:
+        """Читает эталон servers.reference.json (best-effort).
+
+        Невалидный/отсутствующий файл → пустой список.
+        """
+        try:
+            raw = json.loads(self._reference_file().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+
+        entries = raw if isinstance(raw, list) else []
+        specs: list[ServerSpec] = []
+        for entry in entries:
+            host = entry.get("host", "") if isinstance(entry, dict) else ""
+            if not isinstance(host, str):
+                continue
+            host = host.strip()
+            if not host:
+                continue
+            engine = str(entry.get("engine") or ENGINE_MYSQL).lower()
+            if engine not in (ENGINE_MYSQL, ENGINE_MSSQL, ENGINE_PGSQL):
+                engine = ENGINE_MYSQL
+            specs.append(
+                ServerSpec(
+                    host=host,
+                    port=int(entry.get("port") or 0),
+                    engine=engine,
+                    user="",
+                    password="",
+                    name=str(entry.get("name", "")),
+                )
+            )
+        return specs
+
+    def _migrate_from_reference(self) -> None:
+        """Первый запуск: импорт серверов из эталона servers.reference.json.
+
+        Реквизиты из эталона не копируются — пустые поля означают
+        наследование глобальных значений config.ini своего движка.
+        Если эталона нет — откат к legacy-импорту из servers.txt.
+        """
+        specs = self._parse_reference()
+        if not specs:
+            self._migrate_from_txt()
+            return
+
+        self._specs = specs
+        self._loaded = True
+        if self.vault.unlocked:
+            self.save(list(self._specs))
+
+    def _merge_reference_hosts(self) -> int:
+        """Добавляет в реестр хосты из эталона, отсутствующие в servers.json.
+
+        Только добавление: существующие записи (реквизиты, имена) не
+        трогаются; хосты из пользовательского реестра не удаляются, даже
+        если их нет в эталоне. Новые серверы получают пустые реквизиты —
+        наследование глобальных значений config.ini своего движка.
+        Возвращает число добавленных хостов.
+        """
+        existing = {spec.host for spec in self._specs}
+        new_specs = [
+            spec for spec in self._parse_reference()
+            if spec.host not in existing
+        ]
+
+        if not new_specs:
+            return 0
+
+        self._specs.extend(new_specs)
+        if self.vault.unlocked:
+            try:
+                self.save(list(self._specs))
+            except Exception:
+                pass
+        return len(new_specs)
+
     def _migrate_from_txt(self) -> None:
-        """Импорт серверов из старого servers.txt (просто хосты)."""
+        """Legacy-импорт серверов из servers.txt (просто хосты, MySQL).
+
+        Используется как запасной вариант, если эталона
+        servers.reference.json нет.
+        """
         txt = Path(config.advanced.servers_file).with_suffix(".txt")
         servers_txt = txt if txt.exists() else self.servers_file.with_name("servers.txt")
 

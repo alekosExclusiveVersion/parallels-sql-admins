@@ -12,7 +12,7 @@ if getattr(sys, "frozen", False):
 
     os.chdir(base)
 
-    for name in ("config.ini", "servers.txt"):
+    for name in ("config.ini",):
         dst = base / name
         src = Path(sys._MEIPASS) / name
         if not dst.exists() and src.exists():

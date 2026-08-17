@@ -18,7 +18,7 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 from common.version import APP_VERSION
 
-datas = [('config.ini', '.'), ('servers.txt', '.'), ('assets', 'assets')]
+datas = [('config.ini', '.'), ('servers.reference.json', '.'), ('assets', 'assets')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('PySide6')
