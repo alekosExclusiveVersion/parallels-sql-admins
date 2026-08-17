@@ -130,6 +130,11 @@ class SecurityConfig:
 
 
 @dataclass(frozen=True)
+class UpdatesConfig:
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class Config:
     mysql: MySQLConfig
     mssql: MSSQLConfig
@@ -141,6 +146,7 @@ class Config:
     output: OutputConfig
     advanced: AdvancedConfig
     security: SecurityConfig
+    updates: UpdatesConfig
 
 
 def _bool(cfg: ConfigParser, section: str, option: str) -> bool:
@@ -340,6 +346,9 @@ def load_config(config_file: str | Path | None = None) -> Config:
             kdf_iterations=p.getint(
                 "security", "kdf_iterations", fallback=600000
             ),
+        ),
+        updates=UpdatesConfig(
+            enabled=p.getboolean("updates", "enabled", fallback=True),
         ),
     )
 
