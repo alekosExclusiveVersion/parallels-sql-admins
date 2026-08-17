@@ -157,7 +157,7 @@ jobs:
           }
           & $iscc installer\setup.iss /DAppVersion=${{ env.version }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Get-Item 'release\ParallelsSQLAdmin-Setup-v${{ env.version }}.exe' |
+          Get-Item 'release\ParallelsSQLAdmin-Setup-${{ env.version }}.exe' |
             Select-Object FullName, Length
 
       - name: Sign installer (Windows)
@@ -167,13 +167,13 @@ jobs:
         env:
           CERT_PFX_B64: ${{ secrets.CERT_PFX_B64 }}
           CERT_PFX_PASSWORD: ${{ secrets.CERT_PFX_PASSWORD }}
-        run: pwsh scripts/sign-windows.ps1 -Path 'release/ParallelsSQLAdmin-Setup-v${{ env.version }}.exe'
+        run: pwsh scripts/sign-windows.ps1 -Path 'release/ParallelsSQLAdmin-Setup-${{ env.version }}.exe'
 
       - name: Verify installer signed (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $sig = Get-AuthenticodeSignature 'release/ParallelsSQLAdmin-Setup-v${{ env.version }}.exe'
+          $sig = Get-AuthenticodeSignature 'release/ParallelsSQLAdmin-Setup-${{ env.version }}.exe'
           if ($null -eq $sig.SignerCertificate) {
             Write-Error 'Setup.exe has no signature'
             exit 1
@@ -183,15 +183,15 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:
-          name: ParallelsSQLAdmin-Setup-v${{ env.version }}
-          path: release/ParallelsSQLAdmin-Setup-v${{ env.version }}.exe
+          name: ParallelsSQLAdmin-Setup-${{ env.version }}
+          path: release/ParallelsSQLAdmin-Setup-${{ env.version }}.exe
           if-no-files-found: error
 
       - name: Attach installer to release
         if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
         uses: softprops/action-gh-release@v2
         with:
-          files: release/ParallelsSQLAdmin-Setup-v${{ env.version }}.exe
+          files: release/ParallelsSQLAdmin-Setup-${{ env.version }}.exe
           fail_on_unmatched_files: true
 
       - uses: actions/upload-artifact@v4
