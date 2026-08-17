@@ -22,7 +22,7 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\release
-OutputBaseFilename=ParallelsSQLAdmin-Setup
+OutputBaseFilename=ParallelsSQLAdmin-Setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -53,7 +53,8 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 [Code]
 const
   UpdateApiUrl = 'https://api.github.com/repos/alekosExclusiveVersion/parallels-sql-admins/releases/latest';
-  UpdateSetupAsset = 'ParallelsSQLAdmin-Setup.exe';
+  UpdateSetupPrefix = 'ParallelsSQLAdmin-Setup-';
+  UpdateSetupLocal = 'ParallelsSQLAdmin-Setup-latest.exe';
 
 { Поиск подстроки с позиции Offset (аналог 3-арг. Pos из Inno 6.4+). }
 function PosFrom(const Substr, Str: String; const Offset: Integer): Integer;
@@ -107,7 +108,7 @@ begin
     if UrlEnd = 0 then
       Exit;
     Url := Copy(JsonText, UrlStart, UrlEnd - UrlStart);
-    if Pos(UpdateSetupAsset, Url) > 0 then
+    if Pos(UpdateSetupPrefix, Url) > 0 then
     begin
       Result := Url;
       Exit;
@@ -195,9 +196,9 @@ begin
             mbConfirmation, MB_YESNO) <> IDYES then
     Exit;
 
-  DownloadPath := ExpandConstant('{tmp}\' + UpdateSetupAsset);
+  DownloadPath := ExpandConstant('{tmp}\' + UpdateSetupLocal);
   try
-    DownloadTemporaryFile(SetupUrl, UpdateSetupAsset, '', @OnDownloadProgress);
+    DownloadTemporaryFile(SetupUrl, UpdateSetupLocal, '', @OnDownloadProgress);
   except
     MsgBox('Не удалось скачать установщик новой версии.' + #13#10 +
            'Будет установлена текущая версия {#AppVersion}.',

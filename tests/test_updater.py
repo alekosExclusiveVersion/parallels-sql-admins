@@ -64,7 +64,7 @@ class TestFetchLatest(unittest.TestCase):
             "assets": [
                 {"name": "ParallelsSQLAdmin-linux.tar.gz",
                  "browser_download_url": "https://ex/l.tar.gz"},
-                {"name": "ParallelsSQLAdmin-Setup.exe",
+                {"name": f"ParallelsSQLAdmin-Setup-{tag.lstrip('v')}.exe",
                  "browser_download_url": "https://ex/Setup.exe"},
             ],
         }

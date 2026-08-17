@@ -31,7 +31,7 @@ from common.version import APP_VERSION
 REPO = "alekosExclusiveVersion/parallels-sql-admins"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_URL = f"https://github.com/{REPO}/releases"
-SETUP_ASSET = "ParallelsSQLAdmin-Setup.exe"
+SETUP_ASSET_PREFIX = "ParallelsSQLAdmin-Setup-"
 EXPECTED_PUBLISHER = "Parallels SQL Admin"
 
 _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(.*)$")
@@ -84,7 +84,8 @@ def fetch_latest(timeout: float = 10.0) -> UpdateInfo:
 
     setup_url = None
     for asset in data.get("assets") or []:
-        if asset.get("name") == SETUP_ASSET:
+        name = str(asset.get("name") or "")
+        if name.startswith(SETUP_ASSET_PREFIX) and name.endswith(".exe"):
             setup_url = asset.get("browser_download_url")
             break
 
