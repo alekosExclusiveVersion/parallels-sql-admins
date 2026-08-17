@@ -75,6 +75,18 @@ def _request_json(url: str, timeout: float) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def setup_download_url(version: str) -> str:
+    """Детерминированный URL установщика для версии (формат с v4.24.8).
+
+    Используется как запасной вариант, если ассет не нашёлся в ответе API.
+    """
+    v = version[1:] if version.startswith("v") else version
+    return (
+        f"https://github.com/{REPO}/releases/download/v{v}/"
+        f"{SETUP_ASSET_PREFIX}{v}.exe"
+    )
+
+
 def fetch_latest(timeout: float = 10.0) -> UpdateInfo:
     data = _request_json(API_URL, timeout)
     tag = str(data.get("tag_name") or "").strip()
@@ -88,6 +100,9 @@ def fetch_latest(timeout: float = 10.0) -> UpdateInfo:
         if name.startswith(SETUP_ASSET_PREFIX) and name.endswith(".exe"):
             setup_url = asset.get("browser_download_url")
             break
+
+    if not setup_url:
+        setup_url = setup_download_url(version)
 
     return UpdateInfo(
         version=version,

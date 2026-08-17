@@ -117,6 +117,18 @@ begin
   end;
 end;
 
+{ Детерминированный URL установщика для версии (формат с v4.24.8). }
+function SetupUrlForVersion(const Version: String): String;
+var
+  V: String;
+begin
+  V := Version;
+  if Copy(V, 1, 1) = 'v' then
+    Delete(V, 1, 1);
+  Result := 'https://github.com/alekosExclusiveVersion/parallels-sql-admins/' +
+            'releases/download/v' + V + '/' + UpdateSetupPrefix + V + '.exe';
+end;
+
 { GET последнего релиза (WinHttpRequest; ошибки сети -> пустая строка). }
 function FetchLatestReleaseJson(): String;
 var
@@ -178,6 +190,15 @@ var
 begin
   Result := True;
 
+  { Закрываем запущенное приложение, если оно открыто (обновление файлов).
+    taskkill молча, ошибки не критичны — CloseApplications всё равно
+    закрывает программы, использующие обновляемые файлы. }
+  try
+    Exec('taskkill.exe', '/F /T /IM "{#MyAppExeName}"', '', SW_HIDE,
+         ewWaitUntilTerminated, ResultCode);
+  except
+  end;
+
   Json := FetchLatestReleaseJson();
   LatestVersion := ExtractTagName(Json);
   if LatestVersion = '' then
@@ -187,6 +208,8 @@ begin
     Exit; { текущий установщик актуален }
 
   SetupUrl := ExtractSetupUrl(Json);
+  if SetupUrl = '' then
+    SetupUrl := SetupUrlForVersion(LatestVersion); { детерминированный фолбэк }
   if SetupUrl = '' then
     Exit;
 

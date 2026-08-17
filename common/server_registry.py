@@ -68,6 +68,7 @@ class ServerSpec:
     user: str = ""
     password: str = ""
     name: str = ""
+    ref: bool = False  # хост пришёл из эталона servers.reference.json
 
     def __post_init__(self):
         if not self.port:
@@ -249,6 +250,7 @@ class ServerRegistry:
                         user=str(entry.get("user", "")),
                         password=password,
                         name=str(entry.get("name", "")),
+                        ref=bool(entry.get("ref")),
                     )
                 except (TypeError, ValueError):
                     continue
@@ -264,11 +266,12 @@ class ServerRegistry:
             self._specs = specs
             self._loaded = True
 
-            added = self._merge_reference_hosts()
-            if added:
+            stats = self._sync_reference()
+            if any(stats):
                 logger.info(
-                    f"Добавлено {added} новых серверов из эталона "
-                    "(servers.reference.json)"
+                    f"Синхронизация с эталоном: "
+                    f"+{stats[0]} добавлено, ~{stats[1]} обновлено, "
+                    f"-{stats[2]} удалено"
                 )
 
             return list(self._specs)
@@ -329,36 +332,89 @@ class ServerRegistry:
             self._migrate_from_txt()
             return
 
+        for spec in specs:
+            spec.ref = True
         self._specs = specs
         self._loaded = True
         if self.vault.unlocked:
             self.save(list(self._specs))
 
-    def _merge_reference_hosts(self) -> int:
-        """Добавляет в реестр хосты из эталона, отсутствующие в servers.json.
+    def _sync_reference(self) -> tuple[int, int, int]:
+        """Синхронизирует реестр с эталоном servers.reference.json.
 
-        Только добавление: существующие записи (реквизиты, имена) не
-        трогаются; хосты из пользовательского реестра не удаляются, даже
-        если их нет в эталоне. Новые серверы получают пустые реквизиты —
-        наследование глобальных значений config.ini своего движка.
-        Возвращает число добавленных хостов.
+        Эталон — источник истины для списка:
+        - новые хосты эталона добавляются (с пометкой ref);
+        - хосты эталона обновляются по engine/port/name (реквизиты
+          пользователя сохраняются);
+        - хосты с пометкой ref, которых больше нет в эталоне, удаляются;
+        - непомеченные хосты (добавленные пользователем вручную)
+          сохраняются, кроме legacy-«оболочек» от старой миграции
+          servers.txt: engine=mysql, реквизиты равны глобальным из
+          config.ini, без имени и нестандартного порта.
+
+        Возвращает (добавлено, обновлено, удалено).
         """
-        existing = {spec.host for spec in self._specs}
-        new_specs = [
-            spec for spec in self._parse_reference()
-            if spec.host not in existing
-        ]
+        reference = {
+            spec.host: spec for spec in self._parse_reference()
+        }
 
-        if not new_specs:
-            return 0
+        added = 0
+        updated = 0
+        removed = 0
+        changed = False
 
-        self._specs.extend(new_specs)
-        if self.vault.unlocked:
-            try:
-                self.save(list(self._specs))
-            except Exception:
-                pass
-        return len(new_specs)
+        merged: list[ServerSpec] = []
+        for spec in self._specs:
+            ref_spec = reference.get(spec.host)
+            if ref_spec is not None:
+                attrs = (spec.engine, spec.port, spec.name)
+                spec.engine = ref_spec.engine
+                spec.port = ref_spec.port
+                spec.name = ref_spec.name
+                spec.ref = True
+                if (spec.engine, spec.port, spec.name) != attrs:
+                    updated += 1
+                    changed = True
+                merged.append(spec)
+                continue
+
+            if spec.ref:
+                removed += 1
+                changed = True
+                continue
+
+            # Legacy-«оболочка» от миграции servers.txt: без собственных
+            # данных — глобальные реквизиты mysql, без имени, порт по
+            # умолчанию. Таких хостов в эталоне уже нет — удаляем.
+            is_stale_shell = (
+                spec.engine == ENGINE_MYSQL
+                and spec.port == default_port(ENGINE_MYSQL)
+                and not spec.name
+                and spec.user == config.mysql.user
+                and spec.password == config.mysql.password
+            )
+            if is_stale_shell:
+                removed += 1
+                changed = True
+                continue
+
+            merged.append(spec)  # пользовательский сервер
+
+        for host, spec in reference.items():
+            if not any(existing.host == host for existing in merged):
+                spec.ref = True
+                merged.append(spec)
+                added += 1
+                changed = True
+
+        if changed:
+            self._specs = merged
+            if self.vault.unlocked:
+                try:
+                    self.save(list(self._specs))
+                except Exception:
+                    pass
+        return added, updated, removed
 
     def _migrate_from_txt(self) -> None:
         """Legacy-импорт серверов из servers.txt (просто хосты, MySQL).
@@ -462,6 +518,7 @@ class ServerRegistry:
                         "user": s.user,
                         "password": self.vault.encrypt(s.password),
                         "name": s.name,
+                        "ref": s.ref,
                     }
                     for s in self._specs
                 ],

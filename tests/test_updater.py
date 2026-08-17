@@ -77,14 +77,25 @@ class TestFetchLatest(unittest.TestCase):
         self.assertEqual(info.url, "https://ex/Setup.exe")
         self.assertIn("releases/tag", info.html_url)
 
-    def test_no_setup_asset(self):
+    def test_no_setup_asset_uses_deterministic_url(self):
         payload = self._payload()
         payload["assets"] = [{"name": "other.zip",
                               "browser_download_url": "https://ex/o.zip"}]
         with mock.patch.object(updater, "_request_json", return_value=payload):
             info = updater.fetch_latest()
         self.assertEqual(info.version, "4.24.7")
-        self.assertIsNone(info.url)
+        self.assertEqual(info.url, updater.setup_download_url("4.24.7"))
+
+    def test_setup_download_url_format(self):
+        self.assertEqual(
+            updater.setup_download_url("4.24.8"),
+            "https://github.com/alekosExclusiveVersion/parallels-sql-admins/"
+            "releases/download/v4.24.8/ParallelsSQLAdmin-Setup-4.24.8.exe",
+        )
+        self.assertEqual(
+            updater.setup_download_url("v4.24.8"),
+            updater.setup_download_url("4.24.8"),
+        )
 
     def test_missing_tag_raises(self):
         with mock.patch.object(updater, "_request_json", return_value={}):

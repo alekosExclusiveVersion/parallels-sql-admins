@@ -127,9 +127,11 @@ class TestReferenceMerge(unittest.TestCase):
             old = by_host["p7ru1.tradesoft.ru"]
             self.assertEqual(old.user, "koshkin")
             self.assertEqual(old.password, "secret")
-            self.assertEqual(old.name, "p7ru1")
+            self.assertEqual(old.name, "")  # атрибуты обновляются из эталона
+            self.assertTrue(old.ref)
             custom = by_host["custom-only.tradesoft.ru"]
             self.assertEqual(custom.name, "Мой сервер")
+            self.assertFalse(custom.ref)
             new_mssql = by_host["sql-prod.tradesoft.ru"]
             self.assertEqual(new_mssql.engine, ENGINE_MSSQL)
             self.assertEqual(new_mssql.port, 1433)
@@ -191,6 +193,146 @@ class TestReferenceMerge(unittest.TestCase):
             self.assertIn("custom-only.tradesoft.ru", hosts)
             self.assertIn("p7ru1.tradesoft.ru", hosts)
             self.assertNotIn("sql-prod.tradesoft.ru", hosts)
+
+
+class TestReferenceSync(unittest.TestCase):
+    """Полная синхронизация с эталоном (эталон — источник истины)."""
+
+    def _reg(self, tmp: Path, servers: list[dict], reference: list[dict]):
+        reg = _make_registry(
+            tmp,
+            json.dumps(
+                {"meta": {"version": 1, "kind": "file_key"},
+                 "servers": servers},
+                ensure_ascii=False,
+            ),
+        )
+        reg._reference_file = lambda: tmp / "reference.json"
+        (tmp / "reference.json").write_text(
+            json.dumps(reference), encoding="utf-8"
+        )
+        return reg
+
+    def test_removes_host_removed_from_reference(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            reg = self._reg(
+                tmp,
+                [
+                    {"host": "gone.tradesoft.ru", "port": 0, "engine": "mysql",
+                     "user": "", "password": "", "name": "", "ref": True},
+                    {"host": "p7ru1.tradesoft.ru", "port": 0, "engine": "mysql",
+                     "user": "", "password": "", "name": "", "ref": True},
+                ],
+                REFERENCE,
+            )
+
+            specs = reg.load()
+
+            hosts = [s.host for s in specs]
+            self.assertNotIn("gone.tradesoft.ru", hosts)
+            self.assertIn("p7ru1.tradesoft.ru", hosts)
+
+    def test_removes_legacy_stale_shell_from_txt_migration(self):
+        from common.config import config
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            reg = self._reg(
+                tmp,
+                [
+                    {"host": "old.tradesoft.ru", "port": 0, "engine": "mysql",
+                     "user": config.mysql.user,
+                     "password": config.mysql.password, "name": ""},
+                ],
+                REFERENCE,
+            )
+
+            specs = reg.load()
+
+            hosts = [s.host for s in specs]
+            self.assertNotIn("old.tradesoft.ru", hosts)
+            self.assertEqual(hosts, [e["host"] for e in REFERENCE])
+
+    def test_keeps_user_server_with_custom_credentials(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            reg = self._reg(
+                tmp,
+                [
+                    {"host": "my-own.tradesoft.ru", "port": 0, "engine": "mysql",
+                     "user": "vlad", "password": "s3cret", "name": "Мой"},
+                ],
+                REFERENCE,
+            )
+
+            specs = reg.load()
+
+            by_host = {s.host: s for s in specs}
+            self.assertIn("my-own.tradesoft.ru", by_host)
+            self.assertEqual(by_host["my-own.tradesoft.ru"].user, "vlad")
+            self.assertFalse(by_host["my-own.tradesoft.ru"].ref)
+            self.assertIn("p7ru1.tradesoft.ru", by_host)
+
+    def test_updates_attributes_keeps_credentials(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            reg = self._reg(
+                tmp,
+                [
+                    {"host": "sql-prod.tradesoft.ru", "port": 1433,
+                     "engine": "mssql", "user": "sa",
+                     "password": "pw", "name": "Старое имя", "ref": True},
+                ],
+                REFERENCE,
+            )
+
+            specs = reg.load()
+
+            spec = specs[0]
+            self.assertEqual(spec.engine, ENGINE_MSSQL)
+            self.assertEqual(spec.port, 1433)
+            self.assertEqual(spec.name, "SQL Prod")
+            self.assertEqual(spec.user, "sa")
+            self.assertEqual(spec.password, "pw")
+            self.assertTrue(spec.ref)
+
+    def test_marks_unmarked_host_from_reference(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            reg = self._reg(
+                tmp,
+                [
+                    {"host": "p7ru1.tradesoft.ru", "port": 0, "engine": "mysql",
+                     "user": "", "password": "", "name": ""},
+                ],
+                REFERENCE,
+            )
+
+            reg.load()
+
+            saved = json.loads(reg.servers_file.read_text(encoding="utf-8"))
+            entry = next(
+                e for e in saved["servers"]
+                if e["host"] == "p7ru1.tradesoft.ru"
+            )
+            self.assertTrue(entry["ref"])
+
+    def test_first_run_marks_reference_hosts(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            reg = _make_registry(tmp)
+            reg._reference_file = lambda: tmp / "reference.json"
+            (tmp / "reference.json").write_text(
+                json.dumps(REFERENCE), encoding="utf-8"
+            )
+
+            reg.load()
+
+            saved = json.loads(reg.servers_file.read_text(encoding="utf-8"))
+            self.assertTrue(
+                all(e.get("ref") for e in saved["servers"])
+            )
 
 
 class TestReferenceBadEntries(unittest.TestCase):
