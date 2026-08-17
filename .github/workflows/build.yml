@@ -97,12 +97,27 @@ jobs:
           }
 
           $exe = 'dist/Parallels SQL Admin/Parallels SQL Admin.exe'
-          & $signtool sign /f $pfx /p $env:CERT_PFX_PASSWORD /fd SHA256 `
-            /tr http://timestamp.digicert.com /td SHA256 /v $exe
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          & $signtool verify /pa /v $exe
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sigArgs = @(
+            'sign', '/f', $pfx, '/p', $env:CERT_PFX_PASSWORD,
+            '/fd', 'SHA256', '/tr', 'https://timestamp.digicert.com',
+            '/td', 'SHA256', '/v', $exe
+          )
+          $p = Start-Process -FilePath $signtool -ArgumentList $sigArgs -PassThru -NoNewWindow
+          if (-not $p.WaitForExit(120000)) {
+            $p.Kill()
+            Write-Error 'signtool sign timed out (120s)'
+            exit 1
+          }
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+
+          $p = Start-Process -FilePath $signtool -ArgumentList @('verify', '/pa', '/v', $exe) -PassThru -NoNewWindow
+          if (-not $p.WaitForExit(60000)) {
+            $p.Kill()
+            Write-Error 'signtool verify timed out (60s)'
+            exit 1
+          }
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
 
           $sig = Get-AuthenticodeSignature $exe
           if ($sig.Status -ne 'Valid') {
