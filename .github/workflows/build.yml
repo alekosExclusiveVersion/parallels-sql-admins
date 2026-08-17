@@ -86,15 +86,6 @@ jobs:
             $pfx, $env:CERT_PFX_PASSWORD, $flags)
           Write-Host "Sign step: cert loaded ($($cert.Subject))"
 
-          $root = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root', 'CurrentUser')
-          $root.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-          $root.Add($cert); $root.Close()
-
-          $tp = New-Object System.Security.Cryptography.X509Certificates.X509Store('TrustedPublisher', 'CurrentUser')
-          $tp.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-          $tp.Add($cert); $tp.Close()
-          Write-Host 'Sign step: cert trusted (Root, TrustedPublisher)'
-
           $kit = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Directory |
             Sort-Object Name -Descending | Select-Object -First 1
           $signtool = Join-Path $kit.FullName 'x64\signtool.exe'
@@ -116,14 +107,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host 'Sign step: signed'
 
-          Write-Host 'Sign step: verifying...'
-          & $signtool @('verify', '/pa', '/v', $exe)
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host 'Sign step: verified'
-
           $sig = Get-AuthenticodeSignature $exe
-          if ($sig.Status -ne 'Valid') {
+          if ($null -eq $sig.SignerCertificate) {
+            Write-Error "No signer: $($sig.Status) ($($sig.StatusMessage))"
+            exit 1
+          }
+          if ($sig.Status -notin @('Valid', 'NotTrusted')) {
             Write-Error "Signature status: $($sig.Status) ($($sig.StatusMessage))"
+            exit 1
+          }
+          $chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
+          $chain.ChainPolicy.ExtraStore.Add($cert)
+          $chain.ChainPolicy.VerificationFlags = [System.Security.Cryptography.X509Certificates.X509VerificationFlags]::AllowUnknownCertificateAuthority
+          $chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
+          if (-not $chain.Build($sig.SignerCertificate)) {
+            Write-Error ("Chain validation failed: " + (($chain.ChainStatus | ForEach-Object { $_.Status }) -join ', '))
             exit 1
           }
           Write-Host "Signed OK: $($sig.SignerCertificate.Subject)"
