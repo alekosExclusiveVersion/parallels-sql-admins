@@ -98,10 +98,11 @@ Security Settings → Public Key Policies:
   издатель «<Название компании>», «Действительна».
 - PowerShell: `Get-AuthenticodeSignature 'Parallels SQL Admin.exe'`
   → `Status: Valid`.
-- В CI шаг `Sign executable (Windows)` завершается проверкой:
-  сертификат импортируется в Trusted Root + Trusted Publishers раннера
-  (как на машинах пользователей), затем `signtool verify /pa` и
-  `Get-AuthenticodeSignature` → `Status: Valid`. При проблемах сборка падает.
+- В CI шаг `Sign executable (Windows)` завершается проверкой: exe
+  подписывается `signtool sign` (SHA-256 + RFC 3161-timestamp,
+  `http://timestamp.digicert.com`), затем подпись валидируется через
+  .NET-цепочку (`X509Chain`) с вашим сертификатом как якорем доверия —
+  без записи в системные хранилища раннера. При проблемах сборка падает.
 
 ## Файлы
 
