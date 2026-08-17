@@ -67,7 +67,8 @@ openssl x509 -in cert.pem -outform der -out codesign.cer
 
 ## 3. Доверие на машинах пользователей
 
-Публичный сертификат `docs/cert/codesign.cer` нужно установить в два хранилища:
+Публичный сертификат `codesign.cer` (в корне репозитория) нужно установить
+в два хранилища:
 
 - **Доверенные корневые центры сертификации** (Trusted Root)
 - **Доверенные издатели** (Trusted Publishers)
@@ -104,7 +105,7 @@ Security Settings → Public Key Policies:
 
 ## Файлы
 
-- `codesign.cer` — публичная часть, для установки на ПК (хранить в
-  `docs/cert/`).
+- `codesign.cer` — публичная часть, для установки на ПК (хранится в корне
+  репозитория).
 - `codesign.pfx` — приватная часть, только в GitHub Secrets, в git не
   коммитить.
