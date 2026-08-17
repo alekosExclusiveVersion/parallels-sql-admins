@@ -169,6 +169,11 @@ begin
   Result := True;
 end;
 
+function OnDownloadProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
+begin
+  Result := True;
+end;
+
 { Проверка обновлений до начала установки. }
 function InitializeSetup(): Boolean;
 var
@@ -197,7 +202,7 @@ begin
 
   DownloadPath := ExpandConstant('{tmp}\' + UpdateSetupAsset);
   try
-    DownloadTemporaryFile(SetupUrl, UpdateSetupAsset, '');
+    DownloadTemporaryFile(SetupUrl, UpdateSetupAsset, '', @OnDownloadProgress);
   except
     MsgBox('Не удалось скачать установщик новой версии.' + #13#10 +
            'Будет установлена текущая версия {#AppVersion}.',
