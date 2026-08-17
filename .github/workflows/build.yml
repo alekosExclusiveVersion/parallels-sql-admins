@@ -68,68 +68,11 @@ jobs:
       - name: Sign executable (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        timeout-minutes: 5
         env:
           CERT_PFX_B64: ${{ secrets.CERT_PFX_B64 }}
           CERT_PFX_PASSWORD: ${{ secrets.CERT_PFX_PASSWORD }}
-        run: |
-          Write-Host 'Sign step: start'
-          if ([string]::IsNullOrEmpty($env:CERT_PFX_B64)) {
-            Write-Host 'CERT_PFX_B64 not set — build stays unsigned'
-            exit 0
-          }
-          $pfx = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_PFX_B64))
-          Write-Host "Sign step: pfx written ($((Get-Item $pfx).Length) bytes)"
-
-          $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::DefaultKeySet
-          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
-            $pfx, $env:CERT_PFX_PASSWORD, $flags)
-          Write-Host "Sign step: cert loaded ($($cert.Subject))"
-
-          $kit = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Directory |
-            Where-Object { $_.Name -match '^\d+\.' } |
-            Sort-Object Name -Descending | Select-Object -First 1
-          $signtool = Join-Path $kit.FullName 'x64\signtool.exe'
-          if (-not (Test-Path $signtool)) {
-            $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe |
-              Select-Object -First 1 -ExpandProperty FullName
-          }
-          if (-not $signtool) {
-            Write-Error 'signtool not found in Windows Kits'
-            exit 1
-          }
-          Write-Host "Sign step: signtool = $signtool"
-
-          $exe = 'dist/Parallels SQL Admin/Parallels SQL Admin.exe'
-
-          $sigArgs = @(
-            'sign', '/f', $pfx, '/p', $env:CERT_PFX_PASSWORD,
-            '/fd', 'SHA256', '/tr', 'http://timestamp.digicert.com',
-            '/td', 'SHA256', '/v', $exe
-          )
-          Write-Host 'Sign step: signing...'
-          & $signtool @sigArgs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host 'Sign step: signed'
-
-          $sig = Get-AuthenticodeSignature $exe
-          if ($null -eq $sig.SignerCertificate) {
-            Write-Error "No signer: $($sig.Status) ($($sig.StatusMessage))"
-            exit 1
-          }
-          if ($sig.Status -in @('HashMismatch', 'InvalidSignature', 'NotSupported')) {
-            Write-Error "Signature status: $($sig.Status) ($($sig.StatusMessage))"
-            exit 1
-          }
-          $chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
-          $chain.ChainPolicy.ExtraStore.Add($cert)
-          $chain.ChainPolicy.VerificationFlags = [System.Security.Cryptography.X509Certificates.X509VerificationFlags]::AllowUnknownCertificateAuthority
-          $chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
-          if (-not $chain.Build($sig.SignerCertificate)) {
-            Write-Error ("Chain validation failed: " + (($chain.ChainStatus | ForEach-Object { $_.Status }) -join ', '))
-            exit 1
-          }
-          Write-Host "Signed OK: $($sig.SignerCertificate.Subject)"
+        run: pwsh scripts/sign-windows.ps1 -Path 'dist/Parallels SQL Admin/Parallels SQL Admin.exe'
 
       - name: Smoke test
         shell: bash
@@ -197,6 +140,59 @@ jobs:
             echo "binary not found in archive" >&2
             exit 1
           fi
+
+      - name: Install Inno Setup (Windows)
+        if: runner.os == 'Windows'
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) {
+            Write-Error "ISCC not found: $iscc"
+            exit 1
+          }
+          & $iscc installer\setup.iss /DAppVersion=${{ env.version }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item 'release\ParallelsSQLAdmin-Setup.exe' |
+            Select-Object FullName, Length
+
+      - name: Sign installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 5
+        env:
+          CERT_PFX_B64: ${{ secrets.CERT_PFX_B64 }}
+          CERT_PFX_PASSWORD: ${{ secrets.CERT_PFX_PASSWORD }}
+        run: pwsh scripts/sign-windows.ps1 -Path 'release/ParallelsSQLAdmin-Setup.exe'
+
+      - name: Verify installer signed (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $sig = Get-AuthenticodeSignature 'release/ParallelsSQLAdmin-Setup.exe'
+          if ($null -eq $sig.SignerCertificate) {
+            Write-Error 'Setup.exe has no signature'
+            exit 1
+          }
+          Write-Host "Setup.exe signed: $($sig.SignerCertificate.Subject)"
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: ParallelsSQLAdmin-Setup-v${{ env.version }}
+          path: release/ParallelsSQLAdmin-Setup.exe
+          if-no-files-found: error
+
+      - name: Attach installer to release
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/ParallelsSQLAdmin-Setup.exe
+          fail_on_unmatched_files: true
 
       - uses: actions/upload-artifact@v4
         with:
