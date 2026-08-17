@@ -169,11 +169,6 @@ begin
   Result := True;
 end;
 
-function OnDownloadProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
-begin
-  Result := True;
-end;
-
 { Проверка обновлений до начала установки. }
 function InitializeSetup(): Boolean;
 var
