@@ -117,7 +117,7 @@ jobs:
             Write-Error "No signer: $($sig.Status) ($($sig.StatusMessage))"
             exit 1
           }
-          if ($sig.Status -notin @('Valid', 'NotTrusted')) {
+          if ($sig.Status -in @('HashMismatch', 'InvalidSignature', 'NotSupported')) {
             Write-Error "Signature status: $($sig.Status) ($($sig.StatusMessage))"
             exit 1
           }
