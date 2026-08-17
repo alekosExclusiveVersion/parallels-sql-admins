@@ -72,21 +72,28 @@ jobs:
           CERT_PFX_B64: ${{ secrets.CERT_PFX_B64 }}
           CERT_PFX_PASSWORD: ${{ secrets.CERT_PFX_PASSWORD }}
         run: |
+          Write-Host 'Sign step: start'
           if ([string]::IsNullOrEmpty($env:CERT_PFX_B64)) {
             Write-Host 'CERT_PFX_B64 not set — build stays unsigned'
             exit 0
           }
           $pfx = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_PFX_B64))
+          Write-Host "Sign step: pfx written ($((Get-Item $pfx).Length) bytes)"
 
-          $cert = Import-PfxCertificate -FilePath $pfx `
-            -CertStoreLocation Cert:\CurrentUser\My `
-            -Password (ConvertTo-SecureString $env:CERT_PFX_PASSWORD -AsPlainText -Force)
+          $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::DefaultKeySet
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
+            $pfx, $env:CERT_PFX_PASSWORD, $flags)
+          Write-Host "Sign step: cert loaded ($($cert.Subject))"
 
           $root = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root', 'CurrentUser')
-          $root.Open('ReadWrite'); $root.Add($cert); $root.Close()
+          $root.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+          $root.Add($cert); $root.Close()
+
           $tp = New-Object System.Security.Cryptography.X509Certificates.X509Store('TrustedPublisher', 'CurrentUser')
-          $tp.Open('ReadWrite'); $tp.Add($cert); $tp.Close()
+          $tp.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+          $tp.Add($cert); $tp.Close()
+          Write-Host 'Sign step: cert trusted (Root, TrustedPublisher)'
 
           $kit = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Directory |
             Sort-Object Name -Descending | Select-Object -First 1
@@ -95,6 +102,7 @@ jobs:
             Write-Error "signtool not found: $signtool"
             exit 1
           }
+          Write-Host "Sign step: signtool = $signtool"
 
           $exe = 'dist/Parallels SQL Admin/Parallels SQL Admin.exe'
 
@@ -103,11 +111,15 @@ jobs:
             '/fd', 'SHA256', '/tr', 'http://timestamp.digicert.com',
             '/td', 'SHA256', '/v', $exe
           )
+          Write-Host 'Sign step: signing...'
           & $signtool @sigArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host 'Sign step: signed'
 
+          Write-Host 'Sign step: verifying...'
           & $signtool @('verify', '/pa', '/v', $exe)
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host 'Sign step: verified'
 
           $sig = Get-AuthenticodeSignature $exe
           if ($sig.Status -ne 'Valid') {
