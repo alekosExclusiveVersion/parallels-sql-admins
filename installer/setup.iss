@@ -183,7 +183,7 @@ end;
 function OnDownloadProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
 begin
   if (DownloadPage <> nil) and (ProgressMax > 0) then
-    UpdateProgress(Progress, ProgressMax);
+    DownloadPage.SetProgress(Progress, ProgressMax);
   Result := True;
 end;
 
