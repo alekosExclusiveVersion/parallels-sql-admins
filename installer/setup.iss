@@ -231,7 +231,7 @@ begin
 
   DownloadPath := ExpandConstant('{tmp}\' + UpdateSetupLocal);
   try
-    if not DownloadTemporaryFile(SetupUrl, UpdateSetupLocal, '', @OnDownloadProgress) then
+    if DownloadTemporaryFile(SetupUrl, UpdateSetupLocal, '', @OnDownloadProgress) = 0 then
     begin
       DownloadPage.Hide;
       MsgBox('Не удалось скачать установщик новой версии.' + #13#10 +
@@ -241,7 +241,9 @@ begin
     end;
   except
     DownloadPage.Hide;
-    MsgBox('Ошибка скачивания установщика новой версии.' + #13#10 +
+    Log('Ошибка скачивания установщика: ' + GetExceptionMessage);
+    MsgBox('Ошибка скачивания установщика новой версии: ' +
+           GetExceptionMessage + #13#10 +
            'Будет установлена текущая версия {#AppVersion}.',
            mbError, MB_OK);
     Exit;
