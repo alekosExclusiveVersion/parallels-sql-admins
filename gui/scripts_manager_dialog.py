@@ -25,6 +25,7 @@ class ScriptsManagerDialog(QDialog):
         self.setWindowTitle("Управление скриптами")
         self.resize(900, 560)
         self.setStyleSheet(theme_styles.dialog_stylesheet())
+        theme_styles.apply_window_appearance(self)
 
         layout = QVBoxLayout(self)
 
