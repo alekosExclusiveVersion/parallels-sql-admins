@@ -10,7 +10,8 @@ common/sql_completion.py
   * "table"   — после FROM/JOIN/INTO/UPDATE/TABLE подсказываем таблицы;
   * "column"  — после `таблица.` подсказываем колонки этой таблицы;
   * "keyword" — во всех остальных случаях ключевые слова (+ таблицы и
-    колонки текущей БД как вспомогательные).
+    колонки текущей БД как вспомогательные);
+  * "script"  — сохранённые скрипты (по имени и содержимому тела).
 
 Используется SqlCompleter (gui/sql_completer.py) и SQLHighlighter
 (единый список ключевых слов SQL_KEYWORDS).
@@ -42,6 +43,7 @@ TABLE_TRIGGER_KEYWORDS = frozenset(
 KIND_TABLE = "table"
 KIND_COLUMN = "column"
 KIND_KEYWORD = "keyword"
+KIND_SCRIPT = "script"
 
 # Максимум строк в попапе (защита от огромных БД).
 MAX_SUGGESTIONS = 200
@@ -112,16 +114,18 @@ def suggest(
     keywords: list[str] | tuple[str, ...] | None = None,
     tables: list[str] | tuple[str, ...] | None = None,
     columns: dict[str, list[str]] | None = None,
+    scripts: list[dict] | None = None,
 ) -> list[tuple[str, str]]:
     """Возвращает подсказки как список (текст, тип).
 
-    `columns` — словарь {имя_таблицы: [колонки]}. Порядок: самое
-    релевантное впереди; дубликаты убираются; список ограничен
-    MAX_SUGGESTIONS.
+    `columns` — словарь {имя_таблицы: [колонки]}. `scripts` — список
+    словарей {name, body}. Порядок: самое релевантное впереди;
+    дубликаты убираются; список ограничен MAX_SUGGESTIONS.
     """
     keywords = list(keywords or SQL_KEYWORDS)
     tables = list(tables or [])
     columns = columns or {}
+    scripts = scripts or []
 
     prefix = context.prefix.lower()
     results: list[tuple[str, str]] = []
@@ -156,7 +160,40 @@ def suggest(
         )
         results.extend(_all_columns(columns, prefix))
 
+    results.extend(_match_scripts(scripts, prefix))
+
     return _dedupe(results)[:MAX_SUGGESTIONS]
+
+
+def _match_scripts(
+    scripts: list[dict],
+    prefix: str,
+) -> list[tuple[str, str]]:
+    """Подбирает скрипты по имени (prefix) и по содержимому тела (contains).
+
+    Приоритет: имя > тело. Формат отображения: "📜 Имя скрипта".
+    """
+    name_matches: list[tuple[str, str]] = []
+    body_matches: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    for s in scripts:
+        name = s.get("name", "")
+        body = s.get("body", "")
+        if not name or name in seen:
+            continue
+
+        name_lower = name.lower()
+        display = f"\U0001f4dc {name}"
+
+        if prefix and name_lower.startswith(prefix):
+            name_matches.append((display, KIND_SCRIPT))
+            seen.add(name)
+        elif prefix and prefix in body.lower():
+            body_matches.append((display, KIND_SCRIPT))
+            seen.add(name)
+
+    return name_matches + body_matches
 
 
 def _all_columns(

@@ -99,6 +99,9 @@ class SqlEditor(QPlainTextEdit):
         if self._completer is None:
             return
 
+        body = self._completer.script_body_for(text)
+        insert_text = body if body is not None else text
+
         tc = self.textCursor()
         prefix = self._completer.completionPrefix()
         if prefix:
@@ -107,7 +110,7 @@ class SqlEditor(QPlainTextEdit):
                 QTextCursor.KeepAnchor,
                 len(prefix),
             )
-        tc.insertText(text)
+        tc.insertText(insert_text)
         self.setTextCursor(tc)
         self._completer.hide_popup()
 
@@ -570,6 +573,10 @@ class SqlConsolePanel(QWidget):
     def set_catalog(self, tables: list[str], columns: dict[str, list[str]]) -> None:
         """Обновляет подсказки таблиц/колонок (из MainWindow)."""
         self._completer.set_catalog(tables, columns)
+
+    def set_scripts(self, scripts: list[dict]) -> None:
+        """Обновляет подсказки скриптов (из MainWindow)."""
+        self._completer.set_scripts(scripts)
 
     def clear_completion(self) -> None:
         """Сбрасывает каталог подсказок (смена сервера/скоупа)."""

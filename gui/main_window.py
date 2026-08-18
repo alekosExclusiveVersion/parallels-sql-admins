@@ -1489,6 +1489,10 @@ class MainWindow(QWidget):
             f"Автодополнение [{host}/{database}]: {message}",
         )
 
+    def _update_completion_scripts(self) -> None:
+        """Передаёт скрипты из ScriptStore в SqlCompleter."""
+        self.panel.set_scripts(self.scripts_store.script_items())
+
     def _sql_stop(self):
 
         self.query_worker.stop()
@@ -2494,6 +2498,7 @@ class MainWindow(QWidget):
         act_clear_query_log.triggered.connect(self._clear_query_log)
         act_clear_query_log.setShortcut("Ctrl+Shift+L")
         self._rebuild_scripts_menu()
+        self._update_completion_scripts()
 
         # --- Настройки ---
         self._menu_settings = menu_bar.addMenu("&Настройки")
@@ -2642,6 +2647,7 @@ class MainWindow(QWidget):
         dialog.exec()
         self.scripts_store.load_scripts()
         self._rebuild_scripts_menu()
+        self._update_completion_scripts()
 
     def _on_script_renamed(self, old_name: str, new_name: str) -> None:
         for tab in self._script_tabs:
@@ -2652,6 +2658,7 @@ class MainWindow(QWidget):
                     self.console_tabs.setTabText(idx, f"Скрипт: {new_name}")
                 break
         self._rebuild_scripts_menu()
+        self._update_completion_scripts()
 
     def _menu_update_server_actions(self):
         has = bool(self.servers_tree.selected_servers())
