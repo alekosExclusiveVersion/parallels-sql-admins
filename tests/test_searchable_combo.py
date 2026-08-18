@@ -177,6 +177,7 @@ class SearchableComboBoxTest(unittest.TestCase):
     def test_click_on_empty_field_shows_all_items(self):
         combo = self._make()
         self._click_field(combo)
+        QApplication.processEvents()
         self.assertTrue(combo._completer.popup().isVisible())
         self.assertEqual(self._rows(combo), ["Prod-01", "Prod-02", "Dev"])
 
@@ -184,13 +185,16 @@ class SearchableComboBoxTest(unittest.TestCase):
         combo = self._make()
         combo.setCurrentIndex(0)
         self._click_field(combo)
+        QApplication.processEvents()
         self.assertTrue(combo._completer.popup().isVisible())
         self.assertEqual(self._rows(combo), ["Prod-01", "Prod-02", "Dev"])
 
     def test_click_then_typing_filters(self):
         combo = self._make()
         self._click_field(combo)
+        QApplication.processEvents()
         self.assertEqual(self._rows(combo), ["Prod-01", "Prod-02", "Dev"])
+        combo._popup_manual = False
         combo._on_text_changed("dev")
         self.assertEqual(self._rows(combo), ["Dev"])
 

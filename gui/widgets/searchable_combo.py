@@ -135,11 +135,14 @@ class SearchableComboBox(QComboBox):
         Сброс фильтра нужен, чтобы при уже выбранном значении клик
         показывал полный список для выбора, а не единственный пункт,
         совпадающий с текущим текстом.
+
+        complete() вызывается через QTimer, чтобы popup не закрылся
+        внутренним eventFilter QCompleter при обработке MousePress.
         """
         if self.count():
             self._popup_manual = True
             self._completer.refresh(self._combo_items(), "", self._item_icon_name)
-            self._completer.complete()
+            QTimer.singleShot(0, self._completer.complete)
 
     def _combo_items(self) -> list[tuple]:
         return [
@@ -152,10 +155,10 @@ class SearchableComboBox(QComboBox):
         ]
 
     def _on_text_changed(self, text: str) -> None:
-        self._completer.refresh(self._combo_items(), text, self._item_icon_name)
         if self._popup_manual:
             self._popup_manual = False
             return
+        self._completer.refresh(self._combo_items(), text, self._item_icon_name)
         if not text or not self.isVisible():
             self._completer.popup().hide()
             return
