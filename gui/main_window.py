@@ -1419,8 +1419,10 @@ class MainWindow(QWidget):
         ]
 
     def _sql_server_changed(self, text):
-        index = self.panel.cb_server.currentIndex()
-        if index < 0 or text != self.panel.cb_server.itemText(index):
+        if self.panel.cb_server.currentIndex() < 0:
+            return
+        host = self.panel.current_host()
+        if not host:
             return
         self._sql_refresh_databases()
 

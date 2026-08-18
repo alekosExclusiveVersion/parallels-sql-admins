@@ -678,16 +678,9 @@ class SqlConsolePanel(QWidget):
         self.editor.clear()
 
     def current_host(self) -> str:
-        """Хост выбранного сервера (имя в списке, host — в данных пункта).
-
-        Если пользователь ввёл произвольный текст (не совпадает с пунктом
-        списка) — возвращает его как есть.
-        """
+        """Хост выбранного сервера (имя в списке, host — в данных пункта)."""
         index = self.cb_server.currentIndex()
         if index >= 0:
-            text = self.cb_server.currentText()
-            if text != self.cb_server.itemText(index):
-                return text.strip()
             host = self.cb_server.itemData(index)
             if host:
                 return str(host)
