@@ -106,9 +106,11 @@ class SearchableComboBox(QComboBox):
         self.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
 
         self._item_icon_name = "server"
+        self._popup_manual = False
         self._completer = SearchComboCompleter(self)
         self.setCompleter(self._completer)
         self._completer.activated.connect(self._on_activated)
+        self._completer.popup().clicked.connect(self._on_popup_clicked)
         self.lineEdit().textChanged.connect(self._on_text_changed)
         # Клик по полю открывает выпадающий список целиком (даже когда
         # значение уже выбрано); ввод текста продолжает фильтровать.
@@ -135,6 +137,7 @@ class SearchableComboBox(QComboBox):
         совпадающий с текущим текстом.
         """
         if self.count():
+            self._popup_manual = True
             self._completer.refresh(self._combo_items(), "", self._item_icon_name)
             self._completer.complete()
 
@@ -150,6 +153,9 @@ class SearchableComboBox(QComboBox):
 
     def _on_text_changed(self, text: str) -> None:
         self._completer.refresh(self._combo_items(), text, self._item_icon_name)
+        if self._popup_manual:
+            self._popup_manual = False
+            return
         if not text or not self.isVisible():
             self._completer.popup().hide()
             return
@@ -185,3 +191,8 @@ class SearchableComboBox(QComboBox):
                 self.setCurrentIndex(i)
                 return
         self.setCurrentText(text)
+
+    def _on_popup_clicked(self, index) -> None:
+        text = index.data(Qt.DisplayRole)
+        if text:
+            self._on_activated(text)
