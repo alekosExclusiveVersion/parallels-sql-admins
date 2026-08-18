@@ -224,7 +224,7 @@ begin
             mbConfirmation, MB_YESNO) <> IDYES then
     Exit;
 
-  DownloadPage := CreateProgressPage(
+  DownloadPage := CreateOutputProgressPage(
     'Скачивание установщика',
     'Скачивание установщика версии ' + LatestVersion + '...');
   DownloadPage.Show;
