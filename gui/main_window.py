@@ -1181,7 +1181,7 @@ class MainWindow(QWidget):
             self.right_splitter.setSizes(sizes)
 
     def _ensure_results_visible(self, *_args) -> None:
-        if not self.tabs_frame.isVisible():
+        if self.right_splitter.is_section_collapsed(1):
             self._toggle_results_panel(True)
         if self.tabs.currentIndex() != 0:
             self.tabs.setCurrentIndex(0)

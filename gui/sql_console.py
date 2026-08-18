@@ -100,7 +100,17 @@ class SqlEditor(QPlainTextEdit):
             return
 
         body = self._completer.script_body_for(text)
-        insert_text = body if body is not None else text
+        if body is not None:
+            tc = self.textCursor()
+            tc.movePosition(QTextCursor.End)
+            current = self.toPlainText()
+            if current and not current.endswith("\n"):
+                tc.insertText("\n")
+            tc.insertText("\n\n\n")
+            tc.insertText(body)
+            self.setTextCursor(tc)
+            self._completer.hide_popup()
+            return
 
         tc = self.textCursor()
         prefix = self._completer.completionPrefix()
@@ -110,7 +120,7 @@ class SqlEditor(QPlainTextEdit):
                 QTextCursor.KeepAnchor,
                 len(prefix),
             )
-        tc.insertText(insert_text)
+        tc.insertText(text)
         self.setTextCursor(tc)
         self._completer.hide_popup()
 
