@@ -2644,6 +2644,7 @@ class MainWindow(QWidget):
     def _menu_scripts_manager(self):
         dialog = ScriptsManagerDialog(self)
         dialog.library.renamed.connect(self._on_script_renamed)
+        dialog.library.runRequested.connect(self._script_insert_to_console)
         dialog.exec()
         self.scripts_store.load_scripts()
         self._rebuild_scripts_menu()
