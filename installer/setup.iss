@@ -56,6 +56,9 @@ const
   UpdateSetupPrefix = 'ParallelsSQLAdmin-Setup-';
   UpdateSetupLocal = 'ParallelsSQLAdmin-Setup-latest.exe';
 
+var
+  DownloadPage: TOutputProgressWizardPage;
+
 { Поиск подстроки с позиции Offset (аналог 3-арг. Pos из Inno 6.4+). }
 function PosFrom(const Substr, Str: String; const Offset: Integer): Integer;
 var
@@ -179,6 +182,8 @@ end;
 
 function OnDownloadProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
 begin
+  if (DownloadPage <> nil) and (ProgressMax > 0) then
+    UpdateProgress(Progress, ProgressMax);
   Result := True;
 end;
 
@@ -219,18 +224,49 @@ begin
             mbConfirmation, MB_YESNO) <> IDYES then
     Exit;
 
+  DownloadPage := CreateProgressPage(
+    'Скачивание установщика',
+    'Скачивание установщика версии ' + LatestVersion + '...');
+  DownloadPage.Show;
+
   DownloadPath := ExpandConstant('{tmp}\' + UpdateSetupLocal);
   try
-    DownloadTemporaryFile(SetupUrl, UpdateSetupLocal, '', @OnDownloadProgress);
+    if not DownloadTemporaryFile(SetupUrl, UpdateSetupLocal, '', @OnDownloadProgress) then
+    begin
+      DownloadPage.Hide;
+      MsgBox('Не удалось скачать установщик новой версии.' + #13#10 +
+             'Будет установлена текущая версия {#AppVersion}.',
+             mbError, MB_OK);
+      Exit;
+    end;
   except
-    MsgBox('Не удалось скачать установщик новой версии.' + #13#10 +
+    DownloadPage.Hide;
+    MsgBox('Ошибка скачивания установщика новой версии.' + #13#10 +
            'Будет установлена текущая версия {#AppVersion}.',
            mbError, MB_OK);
     Exit;
   end;
+  DownloadPage.Hide;
 
   if FileExists(DownloadPath) then
+  begin
     if Exec(DownloadPath, '', '', SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode) then
+    begin
       if ResultCode = 0 then
-        Result := False; { новая версия установлена — текущую отменяем }
+        Result := False { новая версия установлена — текущую отменяем }
+      else
+        MsgBox('Установщик новой версии завершился с ошибкой (код ' +
+               IntToStr(ResultCode) + ').' + #13#10 +
+               'Будет установлена текущая версия {#AppVersion}.',
+               mbError, MB_OK);
+    end
+    else
+      MsgBox('Не удалось запустить установщик новой версии.' + #13#10 +
+             'Будет установлена текущая версия {#AppVersion}.',
+             mbError, MB_OK);
+  end
+  else
+    MsgBox('Скачанный файл не найден: ' + DownloadPath + #13#10 +
+           'Будет установлена текущая версия {#AppVersion}.',
+           mbError, MB_OK);
 end;
