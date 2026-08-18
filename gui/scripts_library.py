@@ -218,6 +218,7 @@ class ScriptsLibrary(QWidget):
 
         self.lbl_script_name = QLabel("")
         self.lbl_script_name.setObjectName("InlineLabel")
+        self.lbl_script_name.setMouseTracking(True)
         self.lbl_script_name.mouseDoubleClickEvent = (
             lambda _: self._rename_script()
         )

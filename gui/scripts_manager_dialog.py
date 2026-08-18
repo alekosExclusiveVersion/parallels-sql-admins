@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from gui.scripts_library import ScriptsLibrary
+from gui import styles as theme_styles
 
 
 class ScriptsManagerDialog(QDialog):
@@ -23,6 +24,7 @@ class ScriptsManagerDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Управление скриптами")
         self.resize(900, 560)
+        self.setStyleSheet(theme_styles.dialog_stylesheet())
 
         layout = QVBoxLayout(self)
 
