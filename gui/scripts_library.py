@@ -22,6 +22,7 @@ from PySide6.QtGui import QFontDatabase, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -106,6 +107,7 @@ class ScriptsLibrary(QWidget):
 
     runRequested = Signal(str)      # запустить check со скриптом (body)
     clearLogRequested = Signal()
+    renamed = Signal(str, str)      # (old_name, new_name)
 
     def __init__(self, parent=None, show_query_log: bool = True) -> None:
         super().__init__(parent)
@@ -172,6 +174,13 @@ class ScriptsLibrary(QWidget):
         self.btn_add.setToolTip("Новый скрипт")
         self.btn_add.clicked.connect(self._add_script)
 
+        self.btn_rename = QToolButton()
+        self.btn_rename.setObjectName("btn_icon")
+        self.btn_rename.setIcon(icon("edit", 16, "@icon_muted"))
+        self.btn_rename.setIconSize(QSize(16, 16))
+        self.btn_rename.setToolTip("Переименовать скрипт")
+        self.btn_rename.clicked.connect(self._rename_script)
+
         self.btn_duplicate = QToolButton()
         self.btn_duplicate.setObjectName("btn_icon")
         self.btn_duplicate.setIcon(icon("content_copy", 16, "@icon_muted"))
@@ -187,6 +196,7 @@ class ScriptsLibrary(QWidget):
         self.btn_delete.clicked.connect(self._delete_script)
 
         actions.addWidget(self.btn_add)
+        actions.addWidget(self.btn_rename)
         actions.addWidget(self.btn_duplicate)
         actions.addWidget(self.btn_delete)
         actions.addStretch()
@@ -208,6 +218,9 @@ class ScriptsLibrary(QWidget):
 
         self.lbl_script_name = QLabel("")
         self.lbl_script_name.setObjectName("InlineLabel")
+        self.lbl_script_name.mouseDoubleClickEvent = (
+            lambda _: self._rename_script()
+        )
         name_row.addWidget(self.lbl_script_name)
         name_row.addStretch()
         name_row.addWidget(
@@ -394,13 +407,42 @@ class ScriptsLibrary(QWidget):
     def _add_script(self) -> None:
         if self._dirty and not self._confirm_save_if_dirty():
             return
-        name = self._unique_name("Новый скрипт")
+        name, ok = QInputDialog.getText(
+            self, "Новый скрипт", "Имя скрипта:"
+        )
+        if not ok or not name.strip():
+            return
+        name = self._unique_name(name.strip())
         self._scripts.append({"name": name, "body": ""})
         self._dirty = False
         self.save_scripts()
         self._rebuild_list()
         self._select(len(self._scripts) - 1)
         self._dirty = True
+
+    def _rename_script(self) -> None:
+        if self._current < 0:
+            return
+        old_name = self._scripts[self._current]["name"]
+        new_name, ok = QInputDialog.getText(
+            self, "Переименовать скрипт", "Имя:", text=old_name,
+        )
+        if not ok or not new_name.strip() or new_name == old_name:
+            return
+        new_name = new_name.strip()
+        names = {s["name"] for s in self._scripts}
+        if new_name in names:
+            QMessageBox.warning(
+                self, "Ошибка",
+                f"Скрипт «{new_name}» уже существует.",
+            )
+            return
+        self._scripts[self._current]["name"] = new_name
+        self.save_scripts()
+        self.lbl_script_name.setText(new_name)
+        self._rebuild_list()
+        self._select(self._current)
+        self.renamed.emit(old_name, new_name)
 
     def _duplicate_script(self) -> None:
         if self._current < 0:

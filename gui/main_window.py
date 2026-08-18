@@ -2638,8 +2638,19 @@ class MainWindow(QWidget):
 
     def _menu_scripts_manager(self):
         dialog = ScriptsManagerDialog(self)
+        dialog.library.renamed.connect(self._on_script_renamed)
         dialog.exec()
         self.scripts_store.load_scripts()
+        self._rebuild_scripts_menu()
+
+    def _on_script_renamed(self, old_name: str, new_name: str) -> None:
+        for tab in self._script_tabs:
+            if tab.script_name() == old_name:
+                tab.set_name(new_name)
+                idx = self.console_tabs.indexOf(tab)
+                if idx >= 0:
+                    self.console_tabs.setTabText(idx, f"Скрипт: {new_name}")
+                break
         self._rebuild_scripts_menu()
 
     def _menu_update_server_actions(self):

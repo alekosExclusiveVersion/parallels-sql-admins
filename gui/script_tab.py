@@ -78,6 +78,10 @@ class ScriptTab(QWidget):
     def script_name(self) -> str:
         return self._name
 
+    def set_name(self, name: str) -> None:
+        self._name = name
+        self.lbl_title.setText(name)
+
     def current_text(self) -> str:
         return self.editor.toPlainText()
 
