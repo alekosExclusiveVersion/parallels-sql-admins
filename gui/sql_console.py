@@ -497,8 +497,8 @@ class SqlConsolePanel(QWidget):
         self.btn_search_stop.clicked.connect(self.searchStopRequested)
         self.ed_search_mask.returnPressed.connect(self._search_submit)
 
-        self.cb_server.currentTextChanged.connect(self.serverChanged)
-        self.cb_server.currentTextChanged.connect(self._completion_server_changed)
+        self.cb_server.currentIndexChanged.connect(self._on_server_index_changed)
+        self.cb_server.currentIndexChanged.connect(self._completion_server_changed)
         self.cb_database.currentTextChanged.connect(self._catalog_schedule)
         self.chk_all_servers.toggled.connect(self.scopeChanged)
         self.chk_all_databases.toggled.connect(self.scopeChanged)
@@ -604,7 +604,11 @@ class SqlConsolePanel(QWidget):
         if host and database:
             self.catalogRequested.emit(host, database)
 
-    def _completion_server_changed(self, _text: str) -> None:
+    def _on_server_index_changed(self, index: int) -> None:
+        if index >= 0:
+            self.serverChanged.emit(self.cb_server.currentText())
+
+    def _completion_server_changed(self, _index: int = -1) -> None:
         self.clear_completion()
         self._catalog_schedule()
 
