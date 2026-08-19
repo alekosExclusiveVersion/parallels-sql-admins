@@ -121,12 +121,25 @@ class SearchableComboBox(QComboBox):
     # ----------------------------------------------------------
 
     def eventFilter(self, obj, event) -> bool:
-        if (
-            obj is self.lineEdit()
-            and event.type() == QEvent.MouseButtonPress
-            and event.button() == Qt.LeftButton
-        ):
-            self._show_popup_on_click()
+        if obj is self.lineEdit():
+            if (
+                event.type() == QEvent.MouseButtonPress
+                and event.button() == Qt.LeftButton
+            ):
+                self._show_popup_on_click()
+            elif event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Up, Qt.Key_Down):
+                popup = self._completer.popup()
+                if popup.isVisible():
+                    idx = popup.currentIndex()
+                    new_idx = popup.indexBelow(idx) if event.key() == Qt.Key_Down else popup.indexAbove(idx)
+                    if new_idx.isValid():
+                        popup.setCurrentIndex(new_idx)
+                        popup.scrollTo(new_idx)
+                    return True
+                if event.key() == Qt.Key_Down and self.count():
+                    self._completer.refresh(self._combo_items(), self.currentText(), self._item_icon_name)
+                    self._completer.complete()
+                    return True
         return super().eventFilter(obj, event)
 
     def _show_popup_on_click(self) -> None:

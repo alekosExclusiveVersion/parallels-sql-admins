@@ -405,13 +405,11 @@ class SqlConsolePanel(QWidget):
             ComboItemDelegate(self.cb_database.view())
         )
 
-        scontrols.addWidget(self.cb_server)
-        scontrols.addWidget(self.cb_database)
+        scontrols.addWidget(self.cb_server, 2)
+        scontrols.addWidget(self.cb_database, 1)
 
         self.chk_write = QCheckBox("Разрешить запросы на запись")
         scontrols.addWidget(self.chk_write)
-
-        scontrols.addStretch()
 
         layout.addLayout(scontrols)
 
