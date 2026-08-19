@@ -130,11 +130,7 @@ class SearchableComboBox(QComboBox):
             elif event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Up, Qt.Key_Down):
                 popup = self._completer.popup()
                 if popup.isVisible():
-                    idx = popup.currentIndex()
-                    new_idx = popup.indexBelow(idx) if event.key() == Qt.Key_Down else popup.indexAbove(idx)
-                    if new_idx.isValid():
-                        popup.setCurrentIndex(new_idx)
-                        popup.scrollTo(new_idx)
+                    popup.event(event)
                     return True
                 if event.key() == Qt.Key_Down and self.count():
                     self._completer.refresh(self._combo_items(), self.currentText(), self._item_icon_name)
