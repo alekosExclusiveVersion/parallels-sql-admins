@@ -107,6 +107,9 @@ class SearchableComboBox(QComboBox):
 
         self._item_icon_name = "server"
         self._popup_manual = False
+        self._hide_exact_timer = QTimer(self)
+        self._hide_exact_timer.setSingleShot(True)
+        self._hide_exact_timer.timeout.connect(self._hide_if_exact)
         self._completer = SearchComboCompleter(self)
         self.setCompleter(self._completer)
         self._completer.activated.connect(self._on_activated)
@@ -115,27 +118,61 @@ class SearchableComboBox(QComboBox):
         # Клик по полю открывает выпадающий список целиком (даже когда
         # значение уже выбрано); ввод текста продолжает фильтровать.
         self.lineEdit().installEventFilter(self)
+        # Перехват Down/Up на уровне QComboBox — completer ставит свой
+        # eventFilter на QComboBox, и Down пропагируется из lineEdit →
+        # QComboBox, где completer обрабатывает его раньше нас.
+        self.installEventFilter(self)
 
     # ----------------------------------------------------------
     # Внутреннее
     # ----------------------------------------------------------
 
-    def eventFilter(self, obj, event) -> bool:
-        if obj is self.lineEdit():
-            if (
-                event.type() == QEvent.MouseButtonPress
-                and event.button() == Qt.LeftButton
-            ):
-                self._show_popup_on_click()
-            elif event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Up, Qt.Key_Down):
-                popup = self._completer.popup()
-                if popup.isVisible():
-                    popup.event(event)
-                    return True
-                if event.key() == Qt.Key_Down and self.count():
-                    self._completer.refresh(self._combo_items(), self.currentText(), self._item_icon_name)
-                    self._completer.complete()
-                    return True
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        # --- клик по lineEdit: открываем попап целиком ---
+        if (
+            obj is self.lineEdit()
+            and event.type() == QEvent.MouseButtonPress
+            and event.button() == Qt.LeftButton
+        ):
+            self._show_popup_on_click()
+            return super().eventFilter(obj, event)
+
+        # --- Down/Up: перехватываем на уровне QComboBox ---
+        # QCompleter ставит свой eventFilter на QComboBox, а не на lineEdit.
+        # Down пропагируется из lineEdit → QComboBox, поэтому перехват
+        # ДО completer'а возможен только здесь (наша фильтрация стояла
+        # позже completer'а и не могла его перебить).
+        if (
+            obj is self
+            and event.type() == QEvent.KeyPress
+            and event.key() in (Qt.Key_Up, Qt.Key_Down)
+        ):
+            self._hide_exact_timer.stop()
+            popup = self._completer.popup()
+            if popup.isVisible():
+                model = popup.model()
+                idx = popup.currentIndex()
+                root = popup.rootIndex()
+                if event.key() == Qt.Key_Down:
+                    row = (idx.row() + 1) if idx.isValid() else 0
+                else:
+                    row = idx.row() - 1 if (idx.isValid() and idx.row() > 0) else model.rowCount(root) - 1
+                if 0 <= row < model.rowCount(root):
+                    new_idx = model.index(row, 0, root)
+                    sm = popup.selectionModel()
+                    sm.blockSignals(True)
+                    popup.setCurrentIndex(new_idx)
+                    sm.blockSignals(False)
+                    popup.scrollTo(new_idx)
+                return True
+            if event.key() == Qt.Key_Down and self.count():
+                self._completer.refresh(
+                    self._combo_items(), self.currentText(),
+                    self._item_icon_name,
+                )
+                self._completer.complete()
+                return True
+
         return super().eventFilter(obj, event)
 
     def _show_popup_on_click(self) -> None:
@@ -173,7 +210,7 @@ class SearchableComboBox(QComboBox):
             return
         exact = any(text == self.itemText(i) for i in range(self.count()))
         if exact:
-            QTimer.singleShot(0, self._hide_if_exact)
+            self._hide_exact_timer.start(0)
             return
         self._completer.complete()
 
