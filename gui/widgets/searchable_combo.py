@@ -13,6 +13,10 @@ Editable QComboBox с поиском по любому вхождению (subst
 Попап подсказок построен по образцу gui/sql_completer.py
 (UnfilteredPopupCompletion) — Qt не фильтрует повторно, список уже
 отфильтрован моделью при каждом вводе.
+
+Навигация стрелками и выбор Enter/Escape обрабатываются через
+eventFilter на попапе — на macOS попап (Qt::Popup) забирает фокус
+клавиатуры, и Down/Up идут напрямую в попап, а не в lineEdit.
 """
 
 from __future__ import annotations
@@ -107,63 +111,69 @@ class SearchableComboBox(QComboBox):
 
         self._item_icon_name = "server"
         self._popup_manual = False
+        self._navigating = False
         self._completer = SearchComboCompleter(self)
         self.setCompleter(self._completer)
         self._completer.activated.connect(self._on_activated)
         self._completer.popup().clicked.connect(self._on_popup_clicked)
         self.lineEdit().textChanged.connect(self._on_text_changed)
         self.lineEdit().installEventFilter(self)
+        # eventFilter на попапе: перехват Enter/Escape/DOWN/UP
+        # на macOS попап (Qt::Popup) забирает фокус — клавиши идут сюда.
+        self._completer.popup().installEventFilter(self)
 
     # ----------------------------------------------------------
     # Внутреннее
     # ----------------------------------------------------------
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        popup = self._completer.popup()
+
+        # --- события попапа (фокус на попапе на macOS) ---
+        if obj is popup and event.type() == QEvent.KeyPress:
+            key = event.key()
+            # Enter/Return: подтверждение выбора
+            if key in (Qt.Key_Return, Qt.Key_Enter):
+                idx = popup.currentIndex()
+                if idx.isValid():
+                    text = idx.data(Qt.DisplayRole)
+                    if text:
+                        self._on_activated(str(text))
+                popup.hide()
+                return True
+            # Escape: закрыть попап
+            if key == Qt.Key_Escape:
+                popup.hide()
+                return True
+            # Down/Up: передаём нативной обработке попапа
+            # (QAbstractItemView::keyPressEvent). Не потребляем событие.
+            # Ставим флаг _navigating, чтобы _on_text_changed не обновлял
+            # модель (highlighted → setEditText → textChanged иначе вызовет
+            # refresh(), который уничтожит модель посреди навигации).
+            if key in (Qt.Key_Down, Qt.Key_Up):
+                self._navigating = True
+                QTimer.singleShot(0, self._clear_navigating)
+                return False
+
+        # --- события lineEdit ---
         if obj is self.lineEdit():
-            # --- клик по полю: открываем попап целиком ---
+            # Клик по полю: открываем попап целиком
             if (
                 event.type() == QEvent.MouseButtonPress
                 and event.button() == Qt.LeftButton
             ):
                 self._show_popup_on_click()
                 return super().eventFilter(obj, event)
-            if event.type() == QEvent.KeyPress:
-                key = event.key()
-                popup = self._completer.popup()
-                # --- Down/Up: навигация по попапу ---
-                if key in (Qt.Key_Up, Qt.Key_Down):
-                    if popup.isVisible():
-                        model = popup.model()
-                        idx = popup.currentIndex()
-                        root = popup.rootIndex()
-                        if key == Qt.Key_Down:
-                            row = (idx.row() + 1) if idx.isValid() else 0
-                        else:
-                            row = idx.row() - 1 if (idx.isValid() and idx.row() > 0) else model.rowCount(root) - 1
-                        if 0 <= row < model.rowCount(root):
-                            new_idx = model.index(row, 0, root)
-                            sm = popup.selectionModel()
-                            sm.blockSignals(True)
-                            popup.setCurrentIndex(new_idx)
-                            sm.blockSignals(False)
-                            popup.scrollTo(new_idx)
-                        return True
-                    if key == Qt.Key_Down and self.count():
-                        self._completer.refresh(
-                            self._combo_items(), self.currentText(),
-                            self._item_icon_name,
-                        )
-                        self._completer.complete()
-                        return True
-                # --- Enter/Return: подтверждение выбора ---
-                if key in (Qt.Key_Return, Qt.Key_Enter) and popup.isVisible():
-                    idx = popup.currentIndex()
-                    if idx.isValid():
-                        text = idx.data(Qt.DisplayRole)
-                        if text:
-                            self._on_activated(str(text))
-                    popup.hide()
+            # Down когда попап ещё не видим: открываем попап
+            if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Down:
+                if not popup.isVisible() and self.count():
+                    self._completer.refresh(
+                        self._combo_items(), self.currentText(),
+                        self._item_icon_name,
+                    )
+                    self._completer.complete()
                     return True
+
         return super().eventFilter(obj, event)
 
     def _show_popup_on_click(self) -> None:
@@ -195,6 +205,13 @@ class SearchableComboBox(QComboBox):
         if self._popup_manual:
             self._popup_manual = False
             return
+        # Когда попап видим и идёт навигация стрелкой, изменение текста
+        # вызвано highlighted → setEditText. refresh() очищает модель
+        # попапа и ломает навигацию. Пропускаем.
+        # При обычном воде текста (попап видим, навигации нет) —
+        # обновляем модель, чтобы отфильтровать список.
+        if self._completer.popup().isVisible() and self._navigating:
+            return
         self._completer.refresh(self._combo_items(), text, self._item_icon_name)
         if not text or not self.isVisible():
             self._completer.popup().hide()
@@ -215,12 +232,17 @@ class SearchableComboBox(QComboBox):
         """
         self._completer.refresh(self._combo_items(), self.currentText(), self._item_icon_name)
 
+    def _clear_navigating(self) -> None:
+        self._navigating = False
+
     def _on_activated(self, text: str) -> None:
         for i in range(self.count()):
             if self.itemText(i) == text:
                 self.setCurrentIndex(i)
+                self._completer.popup().hide()
                 return
         self.setCurrentText(text)
+        self._completer.popup().hide()
 
     def _on_popup_clicked(self, index) -> None:
         text = index.data(Qt.DisplayRole)
