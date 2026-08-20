@@ -14,6 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from common.sql_completion import (
     KIND_COLUMN,
     KIND_KEYWORD,
+    KIND_SCRIPT,
     KIND_TABLE,
     analyze,
     suggest,
@@ -177,6 +178,36 @@ class TestCatalogQueries(unittest.TestCase):
         self.assertEqual(tables, ["orders", "users"])
         self.assertEqual(columns["users"], ["id", "name"])
         self.assertEqual(columns["orders"], ["id"])
+
+
+class TestCyrillicCompletion(unittest.TestCase):
+
+    def test_cyrillic_prefix(self):
+        c = analyze("тики", 4)
+        self.assertEqual(c.prefix, "тики")
+        self.assertFalse(c.has_dot)
+
+    def test_cyrillic_mid_word(self):
+        c = analyze("SELECT * FROM тик", 17)
+        self.assertEqual(c.prefix, "тик")
+
+    def test_cyrillic_script_suggestion(self):
+        scripts = [{"name": "тики_отчет", "body": "SELECT 1"}]
+        items = suggest(
+            ctx("тик" + _MARKER),
+            scripts=scripts,
+        )
+        names = [text for text, kind in items if kind == KIND_SCRIPT]
+        self.assertTrue(any("тики_отчет" in n for n in names))
+
+    def test_script_name_contains(self):
+        scripts = [{"name": "Список тикетов", "body": "SELECT 1"}]
+        items = suggest(
+            ctx("тик" + _MARKER),
+            scripts=scripts,
+        )
+        names = [text for text, kind in items if kind == KIND_SCRIPT]
+        self.assertTrue(any("тикетов" in n for n in names))
 
 
 if __name__ == "__main__":

@@ -77,6 +77,7 @@ class SqlEditor(QPlainTextEdit):
         self._line_number_area = LineNumberArea(self)
 
         self._completer = None
+        self._esc_closing = False
         self._completion_timer = QTimer(self)
         self._completion_timer.setSingleShot(True)
         self._completion_timer.setInterval(120)
@@ -169,11 +170,17 @@ class SqlEditor(QPlainTextEdit):
                 completer.popup().hide()
                 return True
             if key == Qt.Key_Escape:
+                self._esc_closing = True
+                QTimer.singleShot(0, self._clear_esc_closing)
+                self._completion_timer.stop()
                 completer.hide_popup()
                 return True
             if key in (Qt.Key_Down, Qt.Key_Up):
                 return self._move_popup_cursor(key)
         return super().eventFilter(obj, event)
+
+    def _clear_esc_closing(self) -> None:
+        self._esc_closing = False
 
     def _move_popup_cursor(self, key: int) -> bool:
         """Перемещает подсветку попапа на одну строку (без обёртки).
@@ -222,12 +229,17 @@ class SqlEditor(QPlainTextEdit):
                     completer.popup().hide()
                     return
                 if key == Qt.Key_Escape:
+                    self._esc_closing = True
+                    QTimer.singleShot(0, self._clear_esc_closing)
+                    self._completion_timer.stop()
                     completer.hide_popup()
                     return
 
         super().keyPressEvent(event)
 
     def _schedule_completion(self) -> None:
+        if self._esc_closing:
+            return
         self._completion_timer.start()
 
     def _run_completion(self) -> None:

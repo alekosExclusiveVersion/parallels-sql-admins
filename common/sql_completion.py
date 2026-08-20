@@ -76,7 +76,7 @@ def analyze(text: str, position: int) -> CompletionContext:
     start = position
     while start > 0:
         ch = before[start - 1]
-        if ch in _IDENTIFIER_CHARS or ch == ".":
+        if ch in _IDENTIFIER_CHARS or ch == "." or ch.isalnum():
             start -= 1
         else:
             break
@@ -186,7 +186,7 @@ def _match_scripts(
         name_lower = name.lower()
         display = f"\U0001f4dc {name}"
 
-        if prefix and name_lower.startswith(prefix):
+        if prefix and prefix in name_lower:
             name_matches.append((display, KIND_SCRIPT))
             seen.add(name)
         elif prefix and prefix in body.lower():
