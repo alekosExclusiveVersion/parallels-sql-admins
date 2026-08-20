@@ -380,6 +380,41 @@ class MySQLClient:
         seen: set[str] = set()
         return [db for db in found if not (db in seen or seen.add(db))]
 
+    def database_update_times(
+        self, host: str, databases: list[str]
+    ) -> dict[str, str]:
+        """Последнее время обновления таблиц для списка БД.
+
+        Один запрос к information_schema.tables — lightweight метаданные.
+        Возвращает {db_name: 'YYYY-MM-DD HH:MM:SS'} или пустое значение.
+        При ошибке (нет доступа, сервер недоступен, старый MySQL) —
+        тихо возвращает пустой dict.
+        """
+        if not databases:
+            return {}
+        try:
+            placeholders = ", ".join(["%s"] * len(databases))
+            sql = (
+                "SELECT table_schema AS db, "
+                "MAX(update_time) AS last_update "
+                "FROM information_schema.tables "
+                f"WHERE table_schema IN ({placeholders}) "
+                "AND update_time IS NOT NULL "
+                "GROUP BY table_schema"
+            )
+            rows = self.query(host, sql, params=tuple(databases))
+            return {
+                row["db"]: str(row.get("last_update") or "")
+                for row in rows
+                if row.get("db")
+            }
+        except Exception as ex:
+            logger.warning(
+                f"{host}: database_update_times failed ({ex}), "
+                f"working DB detection disabled for this server"
+            )
+            return {}
+
     def _search_databases_by_domain_conn(
         self,
         conn,

@@ -21,7 +21,7 @@ class DatabaseSearchWorker(QObject):
     finished = Signal()
     progress = Signal(int, int)
     status = Signal(str)
-    result = Signal(str, str)  # server, database
+    result = Signal(str, str, str)  # server, database, last_update
     error = Signal(str, str)   # server, message
 
     def __init__(self):
@@ -39,16 +39,29 @@ class DatabaseSearchWorker(QObject):
         self._stop_requested = True
 
     def _search_server(self, server: str):
-        """Поиск БД на одном сервере. Возвращает (server, databases, error)."""
+        """Поиск БД на одном сервере. Возвращает (server, databases, update_times, error)."""
         if self._stop_requested:
-            return server, [], None
+            return server, [], {}, None
 
         try:
             databases = mysql.search_databases(server, self._mask)
-            return server, databases, None
+
+            update_times = {}
+            if databases:
+                try:
+                    update_times = mysql.database_update_times(
+                        server, databases
+                    )
+                except Exception as ex:
+                    logger.warning(
+                        f"{server}: update_times query failed ({ex}), "
+                        f"continuing without activity data"
+                    )
+
+            return server, databases, update_times, None
         except Exception as ex:
             logger.exception(ex)
-            return server, [], str(ex)
+            return server, [], {}, str(ex)
 
     @Slot()
     def run(self):
@@ -90,7 +103,7 @@ class DatabaseSearchWorker(QObject):
                         pending.cancel()
                     break
 
-                server, databases, err = future.result()
+                server, databases, update_times, err = future.result()
 
                 completed += 1
 
@@ -100,7 +113,8 @@ class DatabaseSearchWorker(QObject):
                 else:
                     for db in databases:
                         found += 1
-                        self.result.emit(server, db)
+                        last_update = update_times.get(db, "")
+                        self.result.emit(server, db, last_update)
 
                     self.status.emit(
                         f"{server}: {len(databases)} database(s) found"

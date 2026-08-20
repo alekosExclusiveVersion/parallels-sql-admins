@@ -18,6 +18,7 @@ from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 from PySide6.QtCore import QRectF
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractItemView,
     QApplication,
     QFileDialog,
     QHeaderView,
@@ -32,6 +33,7 @@ from PySide6.QtWidgets import (
 
 from gui.styles import ERROR_BG, STATUS_COLORS, color as theme_color
 from gui.widgets.filter_header import FilterHeaderRow
+from common.logger import logger
 
 CHECK_HEADERS = [
     "Source",
@@ -362,10 +364,41 @@ class ResultTable(QTableWidget):
             status_col=5,
         )
 
-    def add_search_result(self, server: str, database: str) -> None:
+    def add_search_result(
+        self, server: str, database: str, last_update: str = ""
+    ) -> None:
         if self.columnCount() == 0:
-            self.setup_columns(["Server", "Database"], {0: 190, 1: 160})
-        self.add_row([server, database])
+            self.setup_columns(
+                ["Server", "Database", "Последнее обновление", "Статус"],
+                {0: 190, 1: 160, 2: 160, 3: 100},
+            )
+        self.add_row([server, database, last_update, ""])
+
+    def mark_working_databases(self):
+        """Ставит «● Рабочая» для самой свежей БД на каждый сервер."""
+        server_best: dict[str, tuple[int, str]] = {}
+        for row in range(self.rowCount()):
+            srv_item = self.item(row, 0)
+            ts_item = self.item(row, 2)
+            if not srv_item or not ts_item:
+                continue
+            srv = srv_item.text()
+            ts = ts_item.text()
+            if not ts:
+                continue
+            if srv not in server_best or ts > server_best[srv][1]:
+                server_best[srv] = (row, ts)
+        marked = 0
+        for row, _ in server_best.values():
+            status_item = self.item(row, 3)
+            if status_item:
+                status_item.setText("● Рабочая")
+                marked += 1
+        if marked:
+            logger.info(
+                f"Marked {marked} working db(s) across "
+                f"{len(server_best)} server(s)"
+            )
 
     def fill_sql_result(
         self,

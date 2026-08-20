@@ -39,6 +39,7 @@ from gui.styles import qcolor
 from gui.sql_highlighter import SQLHighlighter
 from gui.widgets.help_icon import HelpIcon
 from gui.widgets.searchable_combo import SearchableComboBox
+from common.logger import logger
 
 
 class ComboItemDelegate(QStyledItemDelegate):
@@ -317,6 +318,7 @@ class SqlConsolePanel(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._server_engines: dict[str, str] = {}
+        self._working_db: str = ""
         self._build_ui()
 
     # ----------------------------------------------------------
@@ -573,6 +575,35 @@ class SqlConsolePanel(QWidget):
         self.cb_database.refresh_completion()
 
         self._catalog_schedule()
+
+    def mark_working_database(
+        self, update_times: dict[str, str]
+    ) -> None:
+        """Подсвечивает рабочую БД в выпадающем списке (зелёная иконка).
+
+        Рабочая — та, у которой самое свежее last_update.
+        При пустом update_times или ошибке — ничего не делает.
+        """
+        if not update_times:
+            logger.debug("No update_times provided, skipping marker")
+            return
+        working = max(update_times, key=update_times.get, default="")
+        if not working:
+            logger.debug(
+                "No working DB determined (all update_times empty)"
+            )
+            return
+        green = "#4caf50"
+        working_icon = icon("storage", 16, green)
+        for i in range(self.cb_database.count()):
+            if self.cb_database.itemText(i) == working:
+                self.cb_database.setItemIcon(i, working_icon)
+                self._working_db = working
+                logger.info(
+                    f"Working DB marked: {working} "
+                    f"(last update: {update_times[working]})"
+                )
+                break
 
     # ----------------------------------------------------------
     # Автодополнение (каталог таблиц/колонок)

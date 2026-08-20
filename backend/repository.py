@@ -16,6 +16,10 @@ class Repository:
     def load_servers(self):
         return self._registry.load()
 
+    def reload_servers(self):
+        """Принудительное перечитывание servers.json с диска."""
+        return self._registry.reload()
+
     @property
     def servers(self):
         return self._registry.specs()

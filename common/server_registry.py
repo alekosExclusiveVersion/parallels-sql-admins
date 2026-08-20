@@ -276,6 +276,29 @@ class ServerRegistry:
 
             return list(self._specs)
 
+    def reload(self) -> list[ServerSpec]:
+        """Принудительное перечитывание servers.json с диска.
+
+        Сбрасывает флаг _loaded и перезапускает load(). При ошибке
+        (файл повреждён, нет доступа) — восстанавливает предыдущий
+        список серверов и логирует причину.
+        """
+        with self._lock:
+            old_specs = list(self._specs)
+            old_loaded = self._loaded
+            self._loaded = False
+        try:
+            return self.load()
+        except Exception:
+            with self._lock:
+                self._specs = old_specs
+                self._loaded = old_loaded
+            logger.warning(
+                f"reload failed, restored {len(old_specs)} servers "
+                f"from cache"
+            )
+            raise
+
     def _reference_file(self) -> Path:
         """Путь к эталону серверов (servers.reference.json).
 

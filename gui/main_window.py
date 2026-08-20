@@ -548,6 +548,14 @@ class MainWindow(QWidget):
 
         previous = self.servers_tree.topLevelItemCount()
 
+        try:
+            self.repository.reload_servers()
+        except Exception as ex:
+            msg = f"Не удалось перечитать servers.json: {ex}"
+            self.append_log("ERROR", msg)
+            logger.warning(msg)
+            return
+
         self._load_servers()
 
         current = self.servers_tree.topLevelItemCount()
@@ -1965,6 +1973,16 @@ class MainWindow(QWidget):
 
         self.panel.set_databases(names)
 
+        # Маркер рабочей БД в выпадающем списке
+        try:
+            host = self.panel.current_host()
+            if host and names:
+                update_times = mysql.database_update_times(host, names)
+                if update_times:
+                    self.panel.mark_working_database(update_times)
+        except Exception as ex:
+            logger.debug(f"Working DB marker skipped: {ex}")
+
         self.append_log(
             "SUCCESS",
             f"Загружено БД: {len(names)}.",
@@ -2000,7 +2018,14 @@ class MainWindow(QWidget):
             )
             return
 
-        servers = self.repository.load_servers()
+        try:
+            servers = self.repository.reload_servers()
+            logger.info(f"Reloaded {len(servers)} servers from disk")
+        except Exception as ex:
+            logger.warning(
+                f"Reload failed ({ex}), using cached server list"
+            )
+            servers = self.repository.load_servers()
 
         if not servers:
             self.status_bar.set_status("Нет серверов для поиска.")
@@ -2063,6 +2088,8 @@ class MainWindow(QWidget):
 
         self.table.sync_filter_columns()
 
+        self.table.mark_working_databases()
+
         self.table.apply_filters()
 
         self._search_busy(False)
@@ -2102,11 +2129,11 @@ class MainWindow(QWidget):
         self.status_bar.set_progress(current, total)
         self._search_completed = current
 
-    def _search_result(self, server, database):
+    def _search_result(self, server, database, last_update=""):
 
         self._search_found += 1
 
-        self.table.add_search_result(server, database)
+        self.table.add_search_result(server, database, last_update)
 
     def _search_error(self, server, message):
 
