@@ -54,6 +54,7 @@ def _is_transient(ex: Exception) -> bool:
 class MySQLClient:
     _UPDATE_TIMES_TTL = 300  # 5 минут кэш update_times
     _UPDATE_TIMES_STALE_DAYS = 7  # считаем update_time устаревшим через 7 дней
+    _UNION_BATCH_SIZE = 50  # батчинг UNION ALL в database_update_times
     _KNOWN_TIMESTAMP_COLUMNS = (
         "ste_datetime", "refresh_date",
         "created_at", "updated_at",
@@ -353,19 +354,22 @@ class MySQLClient:
             [row["COLUMN_NAME"] for row in cols],
         )
 
-    def search_databases(self, host: str, mask: str) -> list[str]:
+    def search_databases(
+        self, host: str, mask: str
+    ) -> list[dict[str, str]]:
         """Поиск БД по маске в стиле LIKE (например 'ar_%45').
+
+        Возвращает list[dict] с ключами 'db' и 'site'.
 
         MySQL не поддерживает плейсхолдеры в `SHOW DATABASES LIKE`,
         поэтому маска экранируется через conn.escape() и подставляется
         вручную. Никаких дополнительных фильтров (prefix/regex/ignore)
         не применяется — маску задаёт пользователь явно.
 
-        Если маска похожа на домен (содержит точку), дополнительно ищет
-        БД через Plesk `psa`: связку data_bases.dom_id -> domains.name.
-        Запрос выполняется на том же соединении, что и SHOW DATABASES,
-        поэтому новых коннектов не открывается. При недоступности psa
-        поиск тихо откатывается к результатам по имени БД.
+        Если маска похожа на домен (содержит точку):
+        1) ищет БД через Plesk `psa`: связку data_bases.dom_id → domains.name;
+        2) извлекает базовое имя (до первой точки) и ищет через SHOW DATABASES.
+        При недоступности psa поиск тихо откатывается к результатам по имени БД.
         """
         mask = mask.strip()
 
@@ -380,19 +384,47 @@ class MySQLClient:
                 f"SHOW DATABASES LIKE {escaped}",
             )
 
-            found = [
-                db
+            found: list[dict[str, str]] = [
+                {"db": db, "site": ""}
                 for row in rows
                 for db in row.values()
             ]
 
             if "." in mask:
-                found.extend(
-                    self._search_databases_by_domain_conn(conn, mask)
+                # 1) Plesk psa lookup
+                psa_dbs = self._search_databases_by_domain_conn(
+                    conn, mask
                 )
+                found.extend(psa_dbs)
 
+                # 2) Base name: activauto.ru → activauto
+                base = mask.split(".")[0].lstrip("%").rstrip("_")
+                if (
+                    base
+                    and len(base) >= 3
+                    and "%" not in base
+                    and "_" not in base
+                    and "*" not in base
+                    and "?" not in base
+                ):
+                    base_escaped = conn.escape(f"%{base}%")
+                    base_rows = self.execute_on_connection(
+                        conn,
+                        f"SHOW DATABASES LIKE {base_escaped}",
+                    )
+                    for row in base_rows:
+                        for db in row.values():
+                            found.append({"db": db, "site": ""})
+
+        # Дедупликация по db, первый site побеждает
         seen: set[str] = set()
-        return [db for db in found if not (db in seen or seen.add(db))]
+        unique: list[dict[str, str]] = []
+        for item in found:
+            db = item["db"]
+            if db and db not in seen:
+                seen.add(db)
+                unique.append(item)
+        return unique
 
     def database_update_times(
         self, host: str, databases: list[str]
@@ -402,7 +434,7 @@ class MySQLClient:
         Шаг 1: information_schema.tables — update_time (может быть stale для InnoDB).
         Шаг 2: information_schema.columns — ищем известные timestamp-колонки
                 для БД где update_time = NULL или старше _UPDATE_TIMES_STALE_DAYS.
-        Шаг 3: UNION ALL MAX(col) FROM db.table для найденных пар.
+        Шаг 3: UNION ALL MAX(col) FROM db.table — батчами по 50.
         Итого: MAX(update_time, known_pattern) — берём самую свежую дату.
 
         Возвращает:
@@ -434,7 +466,9 @@ class MySQLClient:
             rows = self.query(host, sql1, params=tuple(databases))
             result: dict[str, str] = {}
             stale_dbs: list[str] = []
-            cutoff = datetime.now() - timedelta(days=self._UPDATE_TIMES_STALE_DAYS)
+            cutoff = datetime.now() - timedelta(
+                days=self._UPDATE_TIMES_STALE_DAYS
+            )
             for row in rows:
                 db = row.get("db")
                 if not db:
@@ -442,7 +476,6 @@ class MySQLClient:
                 ts = row.get("last_update")
                 if ts:
                     result[db] = str(ts)
-                    # InnoDB может отдавать устаревший update_time
                     if isinstance(ts, datetime) and ts < cutoff:
                         stale_dbs.append(db)
                 else:
@@ -482,16 +515,31 @@ class MySQLClient:
                                     f"MAX(`{col}`) AS act "
                                     f"FROM `{db}`.`{tbl}`"
                                 )
-                        if union_parts:
-                            sql3 = " UNION ALL ".join(union_parts)
-                            stat_rows = self.query(host, sql3)
-                            for row in stat_rows:
-                                db = row.get("db")
-                                act = row.get("act")
-                                if db and act:
-                                    act_str = str(act)
-                                    if db not in result or act_str > result[db]:
-                                        result[db] = act_str
+                        # Батчинг: по 50 подзапросов
+                        for i in range(
+                            0, len(union_parts), self._UNION_BATCH_SIZE
+                        ):
+                            batch = union_parts[
+                                i : i + self._UNION_BATCH_SIZE
+                            ]
+                            try:
+                                sql3 = " UNION ALL ".join(batch)
+                                stat_rows = self.query(host, sql3)
+                                for row in stat_rows:
+                                    db = row.get("db")
+                                    act = row.get("act")
+                                    if db and act:
+                                        act_str = str(act)
+                                        if (
+                                            db not in result
+                                            or act_str > result[db]
+                                        ):
+                                            result[db] = act_str
+                            except Exception as ex:
+                                logger.warning(
+                                    f"{host}: UNION ALL batch "
+                                    f"failed ({ex})"
+                                )
                 except Exception as ex:
                     logger.warning(
                         f"{host}: known-pattern fallback "
@@ -516,11 +564,11 @@ class MySQLClient:
         self,
         conn,
         mask: str,
-    ) -> list[str]:
+    ) -> list[dict[str, str]]:
         """Ищет БД по домену/адресу сайта через Plesk psa.
 
-        Возвращает имена БД, чей домен (psa.domains.name) совпадает
-        с маской. Выполняется на переданном соединении; при отсутствии
+        Возвращает list[dict] с ключами 'db' и 'site'.
+        Выполняется на переданном соединении; при отсутствии
         доступа к psa логирует предупреждение и возвращает пустой список.
         """
         pattern = mask
@@ -533,7 +581,7 @@ class MySQLClient:
         try:
             rows = self.execute_on_connection(
                 conn,
-                "SELECT db.name AS db_name "
+                "SELECT db.name AS db_name, d.name AS site_name "
                 "FROM psa.data_bases db "
                 "JOIN psa.domains d ON d.id = db.dom_id "
                 "WHERE db.type = 'mysql' "
@@ -547,7 +595,7 @@ class MySQLClient:
             return []
 
         return [
-            row["db_name"]
+            {"db": row["db_name"], "site": row.get("site_name", "")}
             for row in rows
             if row.get("db_name")
         ]

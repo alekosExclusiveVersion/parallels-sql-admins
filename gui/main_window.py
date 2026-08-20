@@ -828,6 +828,13 @@ class MainWindow(QWidget):
 
         filter_layout.addWidget(self.chk_only_errors)
 
+        self.chk_working_only = QCheckBox(
+            "Только рабочие"
+        )
+        self.chk_working_only.setFixedHeight(26)
+
+        filter_layout.addWidget(self.chk_working_only)
+
         self.btn_export_all = QToolButton()
         self.btn_export_all.setObjectName("btn_icon")
         self.btn_export_all.setIcon(icon("download"))
@@ -878,6 +885,7 @@ class MainWindow(QWidget):
         self.table.attach_filters(
             self.result_search,
             self.chk_only_errors,
+            self.chk_working_only,
         )
 
         # ----------------------------------------------------------
@@ -2129,11 +2137,11 @@ class MainWindow(QWidget):
         self.status_bar.set_progress(current, total)
         self._search_completed = current
 
-    def _search_result(self, server, database, last_update=""):
+    def _search_result(self, server, database, last_update="", site=""):
 
         self._search_found += 1
 
-        self.table.add_search_result(server, database, last_update)
+        self.table.add_search_result(server, database, last_update, site)
 
     def _search_error(self, server, message):
 

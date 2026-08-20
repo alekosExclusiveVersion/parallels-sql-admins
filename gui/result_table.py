@@ -199,6 +199,7 @@ class ResultTable(QTableWidget):
 
         self._search_edit: QLineEdit | None = None
         self._only_errors: QCheckBox | None = None
+        self._working_only: QCheckBox | None = None
         self._results_source: str | None = None
 
         # Множество редактируемых колонок данных (>= 3); None — редактирование
@@ -270,16 +271,20 @@ class ResultTable(QTableWidget):
         self,
         search_edit: QLineEdit,
         only_errors: QCheckBox,
+        working_only: QCheckBox,
     ) -> None:
-        """Подключает внешнее поле сквозного поиска и чекбокс «Только ошибки»."""
+        """Подключает внешнее поле сквозного поиска и чекбоксы фильтров."""
         self._search_edit = search_edit
         self._only_errors = only_errors
+        self._working_only = working_only
 
         search_edit.textChanged.connect(self._on_filter_changed)
         only_errors.toggled.connect(self._on_filter_changed)
+        working_only.toggled.connect(self._on_filter_changed)
         self.filter_header.filterChanged.connect(self._on_filter_changed)
 
         self._update_only_errors_visibility()
+        self._update_working_only_visibility()
 
     # ----------------------------------------------------------
     # Состояние результата
@@ -293,6 +298,7 @@ class ResultTable(QTableWidget):
     def results_source(self, value: str | None) -> None:
         self._results_source = value
         self._update_only_errors_visibility()
+        self._update_working_only_visibility()
 
     def _update_only_errors_visibility(self) -> None:
         if self._only_errors is None:
@@ -301,6 +307,14 @@ class ResultTable(QTableWidget):
         self._only_errors.setVisible(visible)
         if not visible and self._only_errors.isChecked():
             self._only_errors.setChecked(False)
+
+    def _update_working_only_visibility(self) -> None:
+        if self._working_only is None:
+            return
+        visible = self._results_source == "search"
+        self._working_only.setVisible(visible)
+        if not visible and self._working_only.isChecked():
+            self._working_only.setChecked(False)
 
     # ----------------------------------------------------------
     # Наполнение
@@ -365,14 +379,16 @@ class ResultTable(QTableWidget):
         )
 
     def add_search_result(
-        self, server: str, database: str, last_update: str = ""
+        self, server: str, database: str,
+        last_update: str = "", site: str = "",
     ) -> None:
         if self.columnCount() == 0:
             self.setup_columns(
-                ["Server", "Database", "Последнее обновление", "Статус"],
-                {0: 190, 1: 160, 2: 160, 3: 100},
+                ["Server", "Database", "Сайт",
+                 "Последнее обновление", "Статус"],
+                {0: 190, 1: 160, 2: 140, 3: 160, 4: 100},
             )
-        self.add_row([server, database, last_update, ""])
+        self.add_row([server, database, site, last_update, ""])
 
     def mark_working_databases(self):
         """Помечает статус БД на основе времени обновления.
@@ -383,10 +399,14 @@ class ResultTable(QTableWidget):
         """
         import time as _time
         today = _time.strftime("%Y-%m-%d")
+        ts_idx = self.column_index("Последнее обновление")
+        status_idx = self.column_index("Статус")
+        if ts_idx is None or status_idx is None:
+            return
         marked = 0
         for row in range(self.rowCount()):
-            ts_item = self.item(row, 2)
-            status_item = self.item(row, 3)
+            ts_item = self.item(row, ts_idx)
+            status_item = self.item(row, status_idx)
             if not status_item:
                 continue
             ts = ts_item.text() if ts_item else ""
@@ -552,7 +572,8 @@ class ResultTable(QTableWidget):
         self._filter_timer.start()
 
     def apply_filters(self) -> None:
-        """Применяет сквозной, поколоночные и «Только ошибки» фильтры.
+        """Применяет сквозной, поколоночные, «Только ошибки»
+        и «Только рабочие» фильтры.
 
         Общий поиск и поколоночный поиск связаны через AND; несколько
         заполненных полей колонок объединяются через OR.
@@ -560,8 +581,10 @@ class ResultTable(QTableWidget):
         search = (self._search_edit.text().strip().lower()
                   if self._search_edit is not None else "")
         only_errors = self._only_errors.isChecked() if self._only_errors is not None else False
+        working_only = self._working_only.isChecked() if self._working_only is not None else False
 
         status_index = self.column_index("Status")
+        working_index = self.column_index("Статус")
 
         column_filters = self.filter_header.get_filters()
 
@@ -624,6 +647,11 @@ class ResultTable(QTableWidget):
                     item = table.item(row, status_index)
                     status_text = item.text() if item else ""
                     visible = status_text == "ERROR"
+
+                if visible and working_only and working_index is not None:
+                    item = table.item(row, working_index)
+                    status_text = item.text() if item else ""
+                    visible = status_text == "● Рабочая"
 
                 table.setRowHidden(row, not visible)
         finally:
