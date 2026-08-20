@@ -375,20 +375,29 @@ class ResultTable(QTableWidget):
         self.add_row([server, database, last_update, ""])
 
     def mark_working_databases(self):
-        """Ставит «● Рабочая» для БД, обновлённых сегодня.
+        """Помечает статус БД на основе времени обновления.
 
-        Запрос к MySQL уже фильтрует по CURDATE() — все строки
-        с непустым last_update обновлялись сегодня. Один проход O(n).
+        - Сегодня → «● Рабочая»
+        - Есть дата, но не сегодня → показывает дату
+        - update_time = NULL → «—»
         """
+        import time as _time
+        today = _time.strftime("%Y-%m-%d")
         marked = 0
         for row in range(self.rowCount()):
             ts_item = self.item(row, 2)
-            if not ts_item or not ts_item.text():
-                continue
             status_item = self.item(row, 3)
-            if status_item:
+            if not status_item:
+                continue
+            ts = ts_item.text() if ts_item else ""
+            if not ts:
+                status_item.setText("—")
+                continue
+            if ts.startswith(today):
                 status_item.setText("● Рабочая")
                 marked += 1
+            else:
+                status_item.setText(ts[:10])
         if marked:
             logger.info(
                 f"Marked {marked} working db(s) (updated today)"

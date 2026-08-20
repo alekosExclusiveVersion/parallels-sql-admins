@@ -387,16 +387,13 @@ class MySQLClient:
     def database_update_times(
         self, host: str, databases: list[str]
     ) -> dict[str, str]:
-        """БД, обновлённые за сегодня, для списка БД на сервере.
+        """Последнее время обновления таблиц для списка БД.
 
-        Запрос к information_schema.tables без фильтра даты —
-        получаем MAX(update_time) для каждой БД. Фильтр «сегодня»
-        применяется на клиенте, чтобы не ломаться на старых MySQL
-        и иметь возможность залогировать что реально пришло.
-
-        Результат кэшируется 5 минут, чтобы не нагружать MySQL.
-        Возвращает {db_name: 'YYYY-MM-DD HH:MM:SS'} (только сегодняшние).
-        При ошибке — тихо возвращает пустой dict.
+        Запрос к information_schema.tables — lightweight метаданные.
+        Возвращает {db_name: 'YYYY-MM-DD HH:MM:SS'} или '' если
+        update_time = NULL (типичное поведение для InnoDB).
+        Фильтр «сегодня» не применяется — определяет вызывающий код.
+        Результат кэшируется 5 минут.
         """
         if not databases:
             return {}
@@ -414,33 +411,26 @@ class MySQLClient:
                 "MAX(update_time) AS last_update "
                 "FROM information_schema.tables "
                 f"WHERE table_schema IN ({placeholders}) "
-                "AND update_time IS NOT NULL "
                 "GROUP BY table_schema"
             )
             rows = self.query(host, sql, params=tuple(databases))
-
-            today = time.strftime("%Y-%m-%d")
-            raw = {
-                row["db"]: str(row.get("last_update") or "")
-                for row in rows
-                if row.get("db")
-            }
-            result = {
-                db: ts for db, ts in raw.items()
-                if ts.startswith(today)
-            }
+            result: dict[str, str] = {}
+            for row in rows:
+                db = row.get("db")
+                if db:
+                    ts = row.get("last_update")
+                    result[db] = str(ts) if ts else ""
 
             logger.debug(
-                f"{host}: update_times raw={len(raw)}, "
-                f"today={len(result)} "
-                f"(date={today})"
+                f"{host}: update_times — "
+                f"{len(result)} db(s), "
+                f"{sum(1 for v in result.values() if v)} with data"
             )
             self._update_times_cache[cache_key] = (now, result)
             return result
         except Exception as ex:
             logger.warning(
-                f"{host}: database_update_times failed ({ex}), "
-                f"working DB detection disabled for this server"
+                f"{host}: database_update_times failed ({ex})"
             )
             return {}
 

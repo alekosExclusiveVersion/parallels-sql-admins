@@ -10,6 +10,8 @@ gui/sql_console.py
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QEvent, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QFontDatabase,
@@ -581,18 +583,19 @@ class SqlConsolePanel(QWidget):
     ) -> None:
         """Подсвечивает БД, обновлённые сегодня, зелёной иконкой.
 
-        Запрос к MySQL уже фильтрует по CURDATE() — все ключи
-        в update_times обновлялись сегодня. Помечаем все.
+        Фильтр по сегодняшней дате — только БД с update_time за сегодня.
         """
         if not update_times:
             logger.debug("No update_times provided, skipping marker")
             return
+        today = time.strftime("%Y-%m-%d")
         green = "#4caf50"
         working_icon = icon("storage", 16, green)
         marked = 0
         for i in range(self.cb_database.count()):
             name = self.cb_database.itemText(i)
-            if name in update_times and update_times[name]:
+            ts = update_times.get(name, "")
+            if ts and ts.startswith(today):
                 self.cb_database.setItemIcon(i, working_icon)
                 marked += 1
         if marked:
