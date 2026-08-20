@@ -52,6 +52,14 @@ def _is_transient(ex: Exception) -> bool:
 
 class MySQLClient:
     _UPDATE_TIMES_TTL = 300  # 5 минут кэш update_times
+    _KNOWN_TIMESTAMP_COLUMNS = (
+        "ste_datetime", "refresh_date",
+        "created_at", "updated_at",
+        "date_added", "last_update",
+        "date_created", "date_modified",
+        "added_at", "modified_at",
+        "inserted_at", "changed_at",
+    )
 
     def __init__(self, cfg: Any = None) -> None:
         self.cfg = cfg or config.mysql
@@ -389,12 +397,14 @@ class MySQLClient:
     ) -> dict[str, str]:
         """Время последней активности БД для списка БД на сервере.
 
-        Шаг 1: information_schema.tables — update_time + data_length + has_stat.
-        Шаг 2 (если нужен): UNION ALL MAX(ste_datetime) FROM _stat для БД
-        где update_time=NULL но _stat существует.
+        Шаг 1: information_schema.tables — update_time + total_size.
+        Шаг 2 (если есть БД с update_time=NULL):
+            information_schema.columns — ищем известные timestamp-колонки.
+        Шаг 3 (если найдены колонки):
+            UNION ALL MAX(col) FROM db.table для найденных пар.
 
         Возвращает:
-          {db: 'YYYY-MM-DD HH:MM:SS'} — реальная дата обновления
+          {db: 'YYYY-MM-DD HH:MM:SS'} — реальная дата
           {db: ''}                     — нет данных
         Результат кэшируется 5 минут.
         """
@@ -409,56 +419,75 @@ class MySQLClient:
 
         try:
             placeholders = ", ".join(["%s"] * len(databases))
-            sql = (
+
+            # Шаг 1: update_time + data_length
+            sql1 = (
                 "SELECT table_schema AS db, "
                 "MAX(update_time) AS last_update, "
-                "SUM(data_length + index_length) AS total_size, "
-                "MAX(CASE WHEN table_name = '_stat' "
-                "THEN 1 ELSE 0 END) AS has_stat "
+                "SUM(data_length + index_length) AS total_size "
                 "FROM information_schema.tables "
                 f"WHERE table_schema IN ({placeholders}) "
                 "GROUP BY table_schema"
             )
-            rows = self.query(host, sql, params=tuple(databases))
+            rows = self.query(host, sql1, params=tuple(databases))
             result: dict[str, str] = {}
-            need_stat: list[str] = []
+            no_ts_dbs: list[str] = []
             for row in rows:
                 db = row.get("db")
                 if not db:
                     continue
                 ts = row.get("last_update")
-                size = row.get("total_size") or 0
-                has_stat = row.get("has_stat") or 0
                 if ts:
                     result[db] = str(ts)
-                elif has_stat:
-                    need_stat.append(db)
-                elif size > 0:
-                    result[db] = ""
                 else:
-                    result[db] = ""
+                    no_ts_dbs.append(db)
 
-            # Шаг 2: реальная активность из _stat для БД без update_time
-            if need_stat:
-                stat_parts = []
-                stat_params: list[str] = []
-                for db in need_stat:
-                    stat_parts.append(
-                        f"SELECT '{db}' AS db, "
-                        f"MAX(ste_datetime) AS act "
-                        f"FROM `{db}`.`_stat`"
-                    )
-                stat_sql = " UNION ALL ".join(stat_parts)
+            # Шаг 2+3: known-pattern fallback для БД без update_time
+            if no_ts_dbs:
+                no_ts_placeholders = ", ".join(
+                    ["%s"] * len(no_ts_dbs)
+                )
+                col_names = ", ".join(
+                    ["%s"] * len(self._KNOWN_TIMESTAMP_COLUMNS)
+                )
+                sql2 = (
+                    "SELECT table_schema AS db, "
+                    "table_name AS tbl, "
+                    "column_name AS col "
+                    "FROM information_schema.columns "
+                    f"WHERE table_schema IN ({no_ts_placeholders}) "
+                    f"AND column_name IN ({col_names})"
+                )
                 try:
-                    stat_rows = self.query(host, stat_sql)
-                    for row in stat_rows:
-                        db = row.get("db")
-                        act = row.get("act")
-                        if db and act:
-                            result[db] = str(act)
+                    cols = self.query(
+                        host, sql2,
+                        params=tuple(no_ts_dbs)
+                        + tuple(self._KNOWN_TIMESTAMP_COLUMNS),
+                    )
+                    if cols:
+                        union_parts = []
+                        for c in cols:
+                            db = c.get("db", "")
+                            tbl = c.get("tbl", "")
+                            col = c.get("col", "")
+                            if db and tbl and col:
+                                union_parts.append(
+                                    f"SELECT '{db}' AS db, "
+                                    f"MAX(`{col}`) AS act "
+                                    f"FROM `{db}`.`{tbl}`"
+                                )
+                        if union_parts:
+                            sql3 = " UNION ALL ".join(union_parts)
+                            stat_rows = self.query(host, sql3)
+                            for row in stat_rows:
+                                db = row.get("db")
+                                act = row.get("act")
+                                if db and act:
+                                    result[db] = str(act)
                 except Exception as ex:
                     logger.warning(
-                        f"{host}: _stat fallback failed ({ex})"
+                        f"{host}: known-pattern fallback "
+                        f"failed ({ex})"
                     )
 
             ts_count = sum(1 for v in result.values() if v)
