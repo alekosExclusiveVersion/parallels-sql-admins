@@ -77,6 +77,7 @@ class SqlEditor(QPlainTextEdit):
         self._line_number_area = LineNumberArea(self)
 
         self._completer = None
+        self._popup_was_visible = False
         self._completion_timer = QTimer(self)
         self._completion_timer.setSingleShot(True)
         self._completion_timer.setInterval(120)
@@ -191,13 +192,16 @@ class SqlEditor(QPlainTextEdit):
 
         На macOS нативный NSPanel закрывается при ESC на уровне Cocoa
         до Qt event system.  eventFilter может не сработать.
-        Watchdog останавливает таймер если попап уже скрыт."""
+        Watchdog останавливает таймер только если попап БЫЛ видим
+        и стал скрытым (т.е. закрылся, а не ещё не открылся)."""
         completer = self._completer
         if completer is None:
             return
         popup = completer.popup()
-        if self._completion_timer.isActive() and not popup.isVisible():
+        visible = popup.isVisible()
+        if self._popup_was_visible and not visible:
             self._completion_timer.stop()
+        self._popup_was_visible = visible
 
     def _move_popup_cursor(self, key: int) -> bool:
         """Перемещает подсветку попапа на одну строку (без обёртки).
