@@ -107,7 +107,7 @@ class DatabaseSearchWorker(QObject):
                         pending.cancel()
                     break
 
-                server, databases, update_times, err = future.result()
+                server, db_items, update_times, err = future.result()
 
                 completed += 1
 
