@@ -75,17 +75,14 @@ class ServerSpec:
             self.port = default_port(self.engine)
 
     def display_name(self) -> str:
-        host_port = f"{self.host}:{self.port}"
         if self.name and self.name != self.host:
-            return f"{self.name} ({host_port})"
-        return host_port
+            return f"{self.name} ({self.host})"
+        return self.host
 
     def ui_label(self) -> str:
-        """Имя для списков серверов: Name (host:port) или host:port."""
-        host_port = f"{self.host}:{self.port}"
-        if self.name:
-            return f"{self.name} ({host_port})"
-        return host_port
+        """Имя для списков серверов: только Name (host скрыт),
+        при отсутствии имени — host."""
+        return self.name or self.host
 
     def key(self) -> tuple[str, int]:
         return (self.host, self.port)
