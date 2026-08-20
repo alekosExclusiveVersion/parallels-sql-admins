@@ -97,6 +97,8 @@ class SqlEditor(QPlainTextEdit):
         if completer is not None:
             completer.activated.connect(self._insert_completion)
             completer.popup().installEventFilter(self)
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().installEventFilter(self)
 
     def _insert_completion(self, text: str) -> None:
         """Вставляет выбранную подсказку вместо вводимого префикса."""
@@ -159,24 +161,36 @@ class SqlEditor(QPlainTextEdit):
 
     def eventFilter(self, obj, event) -> bool:
         completer = self._completer
-        if (
-            completer is not None
-            and obj is completer.popup()
-            and event.type() == QEvent.KeyPress
-        ):
+
+        if completer is None:
+            return super().eventFilter(obj, event)
+
+        popup = completer.popup()
+
+        if event.type() == QEvent.KeyPress:
             key = event.key()
-            if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab):
-                self._accept_current_completion()
-                completer.popup().hide()
-                return True
-            if key == Qt.Key_Escape:
+
+            if obj is popup:
+                if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab):
+                    self._accept_current_completion()
+                    popup.hide()
+                    return True
+                if key == Qt.Key_Escape:
+                    self._esc_closing = True
+                    QTimer.singleShot(0, self._clear_esc_closing)
+                    self._completion_timer.stop()
+                    completer.hide_popup()
+                    return True
+                if key in (Qt.Key_Down, Qt.Key_Up):
+                    return self._move_popup_cursor(key)
+
+            if key == Qt.Key_Escape and popup.isVisible():
                 self._esc_closing = True
                 QTimer.singleShot(0, self._clear_esc_closing)
                 self._completion_timer.stop()
                 completer.hide_popup()
                 return True
-            if key in (Qt.Key_Down, Qt.Key_Up):
-                return self._move_popup_cursor(key)
+
         return super().eventFilter(obj, event)
 
     def _clear_esc_closing(self) -> None:

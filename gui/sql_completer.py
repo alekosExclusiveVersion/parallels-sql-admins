@@ -89,7 +89,7 @@ class SqlCompleter(QCompleter):
             self._clear_and_hide()
             return
 
-        min_len = 1 if context.has_dot else 2
+        min_len = 1 if (context.has_dot or not prefix.isascii()) else 2
         if not force and len(prefix) < min_len:
             self._clear_and_hide()
             return
