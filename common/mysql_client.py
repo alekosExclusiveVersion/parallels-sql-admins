@@ -387,15 +387,14 @@ class MySQLClient:
     def database_update_times(
         self, host: str, databases: list[str]
     ) -> dict[str, str]:
-        """Время обновления и размер БД для списка БД на сервере.
+        """Время последней активности БД для списка БД на сервере.
 
-        Один запрос к information_schema.tables — получаем update_time
-        И data_length+index_length. Если update_time = NULL (InnoDB),
-        но есть данные — возвращаем маркер '__HAS_DATA__'.
+        Шаг 1: information_schema.tables — update_time + data_length + has_stat.
+        Шаг 2 (если нужен): UNION ALL MAX(ste_datetime) FROM _stat для БД
+        где update_time=NULL но _stat существует.
 
         Возвращает:
-          {db: 'YYYY-MM-DD HH:MM:SS'} — есть update_time
-          {db: '__HAS_DATA__'}        — update_time NULL, но БД не пустая
+          {db: 'YYYY-MM-DD HH:MM:SS'} — реальная дата обновления
           {db: ''}                     — нет данных
         Результат кэшируется 5 минут.
         """
@@ -413,39 +412,60 @@ class MySQLClient:
             sql = (
                 "SELECT table_schema AS db, "
                 "MAX(update_time) AS last_update, "
-                "SUM(data_length + index_length) AS total_size "
+                "SUM(data_length + index_length) AS total_size, "
+                "MAX(CASE WHEN table_name = '_stat' "
+                "THEN 1 ELSE 0 END) AS has_stat "
                 "FROM information_schema.tables "
                 f"WHERE table_schema IN ({placeholders}) "
                 "GROUP BY table_schema"
             )
             rows = self.query(host, sql, params=tuple(databases))
             result: dict[str, str] = {}
+            need_stat: list[str] = []
             for row in rows:
                 db = row.get("db")
                 if not db:
                     continue
                 ts = row.get("last_update")
                 size = row.get("total_size") or 0
+                has_stat = row.get("has_stat") or 0
                 if ts:
                     result[db] = str(ts)
+                elif has_stat:
+                    need_stat.append(db)
                 elif size > 0:
-                    result[db] = "__HAS_DATA__"
+                    result[db] = ""
                 else:
                     result[db] = ""
 
-            ts_count = sum(
-                1 for v in result.values()
-                if v and v != "__HAS_DATA__"
-            )
-            data_count = sum(
-                1 for v in result.values()
-                if v == "__HAS_DATA__"
-            )
+            # Шаг 2: реальная активность из _stat для БД без update_time
+            if need_stat:
+                stat_parts = []
+                stat_params: list[str] = []
+                for db in need_stat:
+                    stat_parts.append(
+                        f"SELECT '{db}' AS db, "
+                        f"MAX(ste_datetime) AS act "
+                        f"FROM `{db}`.`_stat`"
+                    )
+                stat_sql = " UNION ALL ".join(stat_parts)
+                try:
+                    stat_rows = self.query(host, stat_sql)
+                    for row in stat_rows:
+                        db = row.get("db")
+                        act = row.get("act")
+                        if db and act:
+                            result[db] = str(act)
+                except Exception as ex:
+                    logger.warning(
+                        f"{host}: _stat fallback failed ({ex})"
+                    )
+
+            ts_count = sum(1 for v in result.values() if v)
             logger.info(
                 f"{host}: update_times — "
                 f"{len(result)} db(s), "
-                f"{ts_count} with timestamp, "
-                f"{data_count} with data (no timestamp)"
+                f"{ts_count} with timestamp"
             )
             self._update_times_cache[cache_key] = (now, result)
             return result

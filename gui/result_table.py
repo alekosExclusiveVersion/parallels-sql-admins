@@ -378,14 +378,12 @@ class ResultTable(QTableWidget):
         """Помечает статус БД на основе времени обновления.
 
         - Сегодня → «● Рабочая»
-        - Есть дата, но не сегодня → показывает дату
-        - update_time=NULL, но есть данные → «Есть данные» + «● Активная»
+        - Есть дата, но не сегодня → показывает дату (YYYY-MM-DD)
         - Нет данных → «—»
         """
         import time as _time
         today = _time.strftime("%Y-%m-%d")
         marked = 0
-        active = 0
         for row in range(self.rowCount()):
             ts_item = self.item(row, 2)
             status_item = self.item(row, 3)
@@ -394,20 +392,14 @@ class ResultTable(QTableWidget):
             ts = ts_item.text() if ts_item else ""
             if not ts:
                 status_item.setText("—")
-            elif ts == "__HAS_DATA__":
-                if ts_item:
-                    ts_item.setText("Есть данные")
-                status_item.setText("● Активная")
-                active += 1
             elif ts.startswith(today):
                 status_item.setText("● Рабочая")
                 marked += 1
             else:
                 status_item.setText(ts[:10])
-        if marked or active:
+        if marked:
             logger.info(
-                f"Status: {marked} working, "
-                f"{active} active (no timestamp)"
+                f"Marked {marked} working db(s) (updated today)"
             )
 
     def fill_sql_result(

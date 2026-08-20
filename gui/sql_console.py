@@ -581,36 +581,24 @@ class SqlConsolePanel(QWidget):
     def mark_working_database(
         self, update_times: dict[str, str]
     ) -> None:
-        """Подсвечивает БД в выпадающем списке.
-
-        - Сегодня → зелёная иконка
-        - __HAS_DATA__ → серая иконка (активна, но update_time неизвестен)
-        """
+        """Подсвечивает БД, обновлённые сегодня, зелёной иконкой."""
         if not update_times:
             logger.debug("No update_times provided, skipping marker")
             return
         today = time.strftime("%Y-%m-%d")
         green = "#4caf50"
-        gray = "#9e9e9e"
         working_icon = icon("storage", 16, green)
-        active_icon = icon("storage", 16, gray)
         marked = 0
-        active = 0
         for i in range(self.cb_database.count()):
             name = self.cb_database.itemText(i)
             ts = update_times.get(name, "")
-            if not ts:
-                continue
-            if ts.startswith(today):
+            if ts and ts.startswith(today):
                 self.cb_database.setItemIcon(i, working_icon)
                 marked += 1
-            elif ts == "__HAS_DATA__":
-                self.cb_database.setItemIcon(i, active_icon)
-                active += 1
-        if marked or active:
+        if marked:
+            self._working_db = True
             logger.info(
-                f"Combo markers: {marked} working, "
-                f"{active} active (no timestamp)"
+                f"Working DB(s) marked in combo: {marked}"
             )
 
     # ----------------------------------------------------------
