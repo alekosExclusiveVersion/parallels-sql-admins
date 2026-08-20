@@ -318,7 +318,7 @@ class SqlConsolePanel(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._server_engines: dict[str, str] = {}
-        self._working_db: str = ""
+        self._working_db: bool = False
         self._build_ui()
 
     # ----------------------------------------------------------
@@ -579,31 +579,27 @@ class SqlConsolePanel(QWidget):
     def mark_working_database(
         self, update_times: dict[str, str]
     ) -> None:
-        """Подсвечивает рабочую БД в выпадающем списке (зелёная иконка).
+        """Подсвечивает БД, обновлённые сегодня, зелёной иконкой.
 
-        Рабочая — та, у которой самое свежее last_update.
-        При пустом update_times или ошибке — ничего не делает.
+        Запрос к MySQL уже фильтрует по CURDATE() — все ключи
+        в update_times обновлялись сегодня. Помечаем все.
         """
         if not update_times:
             logger.debug("No update_times provided, skipping marker")
             return
-        working = max(update_times, key=update_times.get, default="")
-        if not working:
-            logger.debug(
-                "No working DB determined (all update_times empty)"
-            )
-            return
         green = "#4caf50"
         working_icon = icon("storage", 16, green)
+        marked = 0
         for i in range(self.cb_database.count()):
-            if self.cb_database.itemText(i) == working:
+            name = self.cb_database.itemText(i)
+            if name in update_times and update_times[name]:
                 self.cb_database.setItemIcon(i, working_icon)
-                self._working_db = working
-                logger.info(
-                    f"Working DB marked: {working} "
-                    f"(last update: {update_times[working]})"
-                )
-                break
+                marked += 1
+        if marked:
+            self._working_db = True
+            logger.info(
+                f"Working DB(s) marked in combo: {marked}"
+            )
 
     # ----------------------------------------------------------
     # Автодополнение (каталог таблиц/колонок)

@@ -23,6 +23,7 @@ from __future__ import annotations
 import atexit
 import re
 import threading
+import time
 from contextlib import contextmanager
 from typing import Any
 
@@ -50,10 +51,13 @@ def _is_transient(ex: Exception) -> bool:
 
 
 class MySQLClient:
+    _UPDATE_TIMES_TTL = 300  # 5 минут кэш update_times
+
     def __init__(self, cfg: Any = None) -> None:
         self.cfg = cfg or config.mysql
         self._query_hook = None
         self._hook_lock = threading.Lock()
+        self._update_times_cache: dict[str, tuple[float, dict]] = {}
         self._pool = ConnectionPool(
             cfg=lambda: self.cfg,
             open_conn=lambda host, db: self._open_connection(host, db),
@@ -383,15 +387,24 @@ class MySQLClient:
     def database_update_times(
         self, host: str, databases: list[str]
     ) -> dict[str, str]:
-        """Последнее время обновления таблиц для списка БД.
+        """БД, обновлённые за сегодня, для списка БД на сервере.
 
-        Один запрос к information_schema.tables — lightweight метаданные.
-        Возвращает {db_name: 'YYYY-MM-DD HH:MM:SS'} или пустое значение.
-        При ошибке (нет доступа, сервер недоступен, старый MySQL) —
-        тихо возвращает пустой dict.
+        Один запрос к information_schema.tables с фильтром CURDATE()
+        — lightweight метаданные. Результат кэшируется 5 минут, чтобы
+        не нагружать MySQL повторными запросами.
+
+        Возвращает {db_name: 'YYYY-MM-DD HH:MM:SS'}.
+        При ошибке — тихо возвращает пустой dict (маркер не ставится).
         """
         if not databases:
             return {}
+
+        cache_key = f"{host}:{','.join(sorted(databases))}"
+        now = time.time()
+        cached = self._update_times_cache.get(cache_key)
+        if cached and now - cached[0] < self._UPDATE_TIMES_TTL:
+            return cached[1]
+
         try:
             placeholders = ", ".join(["%s"] * len(databases))
             sql = (
@@ -400,14 +413,17 @@ class MySQLClient:
                 "FROM information_schema.tables "
                 f"WHERE table_schema IN ({placeholders}) "
                 "AND update_time IS NOT NULL "
+                "AND update_time >= CURDATE() "
                 "GROUP BY table_schema"
             )
             rows = self.query(host, sql, params=tuple(databases))
-            return {
+            result = {
                 row["db"]: str(row.get("last_update") or "")
                 for row in rows
                 if row.get("db")
             }
+            self._update_times_cache[cache_key] = (now, result)
+            return result
         except Exception as ex:
             logger.warning(
                 f"{host}: database_update_times failed ({ex}), "

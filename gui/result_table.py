@@ -375,29 +375,23 @@ class ResultTable(QTableWidget):
         self.add_row([server, database, last_update, ""])
 
     def mark_working_databases(self):
-        """Ставит «● Рабочая» для самой свежей БД на каждый сервер."""
-        server_best: dict[str, tuple[int, str]] = {}
-        for row in range(self.rowCount()):
-            srv_item = self.item(row, 0)
-            ts_item = self.item(row, 2)
-            if not srv_item or not ts_item:
-                continue
-            srv = srv_item.text()
-            ts = ts_item.text()
-            if not ts:
-                continue
-            if srv not in server_best or ts > server_best[srv][1]:
-                server_best[srv] = (row, ts)
+        """Ставит «● Рабочая» для БД, обновлённых сегодня.
+
+        Запрос к MySQL уже фильтрует по CURDATE() — все строки
+        с непустым last_update обновлялись сегодня. Один проход O(n).
+        """
         marked = 0
-        for row, _ in server_best.values():
+        for row in range(self.rowCount()):
+            ts_item = self.item(row, 2)
+            if not ts_item or not ts_item.text():
+                continue
             status_item = self.item(row, 3)
             if status_item:
                 status_item.setText("● Рабочая")
                 marked += 1
         if marked:
             logger.info(
-                f"Marked {marked} working db(s) across "
-                f"{len(server_best)} server(s)"
+                f"Marked {marked} working db(s) (updated today)"
             )
 
     def fill_sql_result(
