@@ -103,14 +103,29 @@ _ICONS = {
         "M6,6h12v12H6z"
     ),
     "dns": (
-        "M20,3H4c-1.1,0 -2,0.9 -2,2v5c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 "
-        "2,-2V5c0,-1.1 -0.9,-2 -2,-2z M6.5,7c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 "
-        "2,-0.9 2,-2 -0.9,-2 -2,-2z M20,12H4c-1.1,0 -2,0.9 -2,2v5c0,1.1 "
-        "0.9,2 2,2h16c1.1,0 2,-0.9 2,-2v-5c0,-1.1 -0.9,-2 -2,-2z "
-        "M6.5,16c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 2,-0.9 2,-2 -0.9,-2 -2,-2z"
+        '<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" '
+        'viewBox="0 0 24 24">'
+        '<ellipse cx="12" cy="5.5" rx="8" ry="3" fill="{c}"/>'
+        '<path fill="{c}" d="M4,5.5v5c0,1.66 3.58,3 8,3s8,-1.34 8,-3v-5'
+        'c0,1.66 -3.58,3 -8,3S4,7.16 4,5.5z"/>'
+        '<path fill="{c}" d="M4,10.5v5c0,1.66 3.58,3 8,3s8,-1.34 8,-3v-5'
+        'c0,1.66 -3.58,3 -8,3S4,12.16 4,10.5z" opacity="0.75"/>'
+        '<ellipse cx="12" cy="5.5" rx="8" ry="3" fill="{c}"/>'
+        '<ellipse cx="12" cy="5.5" rx="8" ry="2.2" fill="#ffffff" opacity="0.25"/>'
+        '<ellipse cx="12" cy="10.5" rx="8" ry="2.2" fill="#ffffff" opacity="0.18"/>'
+        '</svg>'
     ),
     "account_tree": (
-        "M22,11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3z"
+        '<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" '
+        'viewBox="0 0 24 24">'
+        '<circle cx="18" cy="5" r="2.5" fill="{c}"/>'
+        '<circle cx="6" cy="12" r="2.5" fill="{c}"/>'
+        '<circle cx="18" cy="19" r="2.5" fill="{c}"/>'
+        '<path fill="{c}" d="M6,14.5v-5h12v-2.5h-8L12,4.5 8,7v2.5'
+        'L6,7v5z"/>'
+        '<path fill="#ffffff" opacity="0.2" d="M6,14.5v-5h12v-2.5h-8'
+        'L12,4.5 8,7v2.5 L6,7v5z"/>'
+        '</svg>'
     ),
     "server": (
         '<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" '
