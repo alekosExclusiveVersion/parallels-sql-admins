@@ -387,12 +387,16 @@ class MySQLClient:
     def database_update_times(
         self, host: str, databases: list[str]
     ) -> dict[str, str]:
-        """Последнее время обновления таблиц для списка БД.
+        """Время обновления и размер БД для списка БД на сервере.
 
-        Запрос к information_schema.tables — lightweight метаданные.
-        Возвращает {db_name: 'YYYY-MM-DD HH:MM:SS'} или '' если
-        update_time = NULL (типичное поведение для InnoDB).
-        Фильтр «сегодня» не применяется — определяет вызывающий код.
+        Один запрос к information_schema.tables — получаем update_time
+        И data_length+index_length. Если update_time = NULL (InnoDB),
+        но есть данные — возвращаем маркер '__HAS_DATA__'.
+
+        Возвращает:
+          {db: 'YYYY-MM-DD HH:MM:SS'} — есть update_time
+          {db: '__HAS_DATA__'}        — update_time NULL, но БД не пустая
+          {db: ''}                     — нет данных
         Результат кэшируется 5 минут.
         """
         if not databases:
@@ -408,7 +412,8 @@ class MySQLClient:
             placeholders = ", ".join(["%s"] * len(databases))
             sql = (
                 "SELECT table_schema AS db, "
-                "MAX(update_time) AS last_update "
+                "MAX(update_time) AS last_update, "
+                "SUM(data_length + index_length) AS total_size "
                 "FROM information_schema.tables "
                 f"WHERE table_schema IN ({placeholders}) "
                 "GROUP BY table_schema"
@@ -417,14 +422,30 @@ class MySQLClient:
             result: dict[str, str] = {}
             for row in rows:
                 db = row.get("db")
-                if db:
-                    ts = row.get("last_update")
-                    result[db] = str(ts) if ts else ""
+                if not db:
+                    continue
+                ts = row.get("last_update")
+                size = row.get("total_size") or 0
+                if ts:
+                    result[db] = str(ts)
+                elif size > 0:
+                    result[db] = "__HAS_DATA__"
+                else:
+                    result[db] = ""
 
-            logger.debug(
+            ts_count = sum(
+                1 for v in result.values()
+                if v and v != "__HAS_DATA__"
+            )
+            data_count = sum(
+                1 for v in result.values()
+                if v == "__HAS_DATA__"
+            )
+            logger.info(
                 f"{host}: update_times — "
                 f"{len(result)} db(s), "
-                f"{sum(1 for v in result.values() if v)} with data"
+                f"{ts_count} with timestamp, "
+                f"{data_count} with data (no timestamp)"
             )
             self._update_times_cache[cache_key] = (now, result)
             return result
