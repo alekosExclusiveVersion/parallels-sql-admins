@@ -72,6 +72,8 @@ class LineNumberArea(QWidget):
 class SqlEditor(QPlainTextEdit):
     """Редактор SQL с нумерацией строк и подсветкой текущей строки."""
 
+    escapePressed = Signal()
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._line_number_area = LineNumberArea(self)
@@ -232,6 +234,11 @@ class SqlEditor(QPlainTextEdit):
                     self._completion_timer.stop()
                     completer.hide_popup()
                     return
+
+            # Esc без попапа → сигнал наружу (остановка запроса и т.д.)
+            if event.key() == Qt.Key_Escape:
+                self.escapePressed.emit()
+                return
 
         super().keyPressEvent(event)
 
@@ -488,6 +495,7 @@ class SqlConsolePanel(QWidget):
         # по catalogRequested и отдаёт обратно через set_catalog().
         self._completer = SqlCompleter(self.editor)
         self.editor.set_completer(self._completer)
+        self.editor.escapePressed.connect(self.stopRequested)
 
         self._catalog_timer = QTimer(self)
         self._catalog_timer.setSingleShot(True)

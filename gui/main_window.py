@@ -2497,7 +2497,6 @@ class MainWindow(QWidget):
             icon("stop"), "Остановить выполнение"
         )
         act_sql_stop.triggered.connect(self._sql_stop)
-        act_sql_stop.setShortcut("Esc")
         act_sql_refresh = menu_console.addAction(
             icon("refresh"), "Обновить список БД"
         )
