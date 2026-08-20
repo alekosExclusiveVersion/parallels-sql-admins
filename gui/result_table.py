@@ -379,7 +379,7 @@ class ResultTable(QTableWidget):
 
         - Сегодня → «● Рабочая»
         - Есть дата, но не сегодня → показывает дату
-        - update_time=NULL, но есть данные → «● Активная»
+        - update_time=NULL, но есть данные → «Есть данные» + «● Активная»
         - Нет данных → «—»
         """
         import time as _time
@@ -395,6 +395,8 @@ class ResultTable(QTableWidget):
             if not ts:
                 status_item.setText("—")
             elif ts == "__HAS_DATA__":
+                if ts_item:
+                    ts_item.setText("Есть данные")
                 status_item.setText("● Активная")
                 active += 1
             elif ts.startswith(today):
