@@ -25,6 +25,7 @@ import re
 import threading
 import time
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from typing import Any
 
 import pymysql
@@ -52,6 +53,7 @@ def _is_transient(ex: Exception) -> bool:
 
 class MySQLClient:
     _UPDATE_TIMES_TTL = 300  # 5 минут кэш update_times
+    _UPDATE_TIMES_STALE_DAYS = 7  # считаем update_time устаревшим через 7 дней
     _KNOWN_TIMESTAMP_COLUMNS = (
         "ste_datetime", "refresh_date",
         "created_at", "updated_at",
@@ -397,11 +399,11 @@ class MySQLClient:
     ) -> dict[str, str]:
         """Время последней активности БД для списка БД на сервере.
 
-        Шаг 1: information_schema.tables — update_time + total_size.
-        Шаг 2 (если есть БД с update_time=NULL):
-            information_schema.columns — ищем известные timestamp-колонки.
-        Шаг 3 (если найдены колонки):
-            UNION ALL MAX(col) FROM db.table для найденных пар.
+        Шаг 1: information_schema.tables — update_time (может быть stale для InnoDB).
+        Шаг 2: information_schema.columns — ищем известные timestamp-колонки
+                для БД где update_time = NULL или старше _UPDATE_TIMES_STALE_DAYS.
+        Шаг 3: UNION ALL MAX(col) FROM db.table для найденных пар.
+        Итого: MAX(update_time, known_pattern) — берём самую свежую дату.
 
         Возвращает:
           {db: 'YYYY-MM-DD HH:MM:SS'} — реальная дата
@@ -420,7 +422,7 @@ class MySQLClient:
         try:
             placeholders = ", ".join(["%s"] * len(databases))
 
-            # Шаг 1: update_time + data_length
+            # Шаг 1: update_time (может быть stale для InnoDB)
             sql1 = (
                 "SELECT table_schema AS db, "
                 "MAX(update_time) AS last_update, "
@@ -431,7 +433,8 @@ class MySQLClient:
             )
             rows = self.query(host, sql1, params=tuple(databases))
             result: dict[str, str] = {}
-            no_ts_dbs: list[str] = []
+            stale_dbs: list[str] = []
+            cutoff = datetime.now() - timedelta(days=self._UPDATE_TIMES_STALE_DAYS)
             for row in rows:
                 db = row.get("db")
                 if not db:
@@ -439,13 +442,16 @@ class MySQLClient:
                 ts = row.get("last_update")
                 if ts:
                     result[db] = str(ts)
+                    # InnoDB может отдавать устаревший update_time
+                    if isinstance(ts, datetime) and ts < cutoff:
+                        stale_dbs.append(db)
                 else:
-                    no_ts_dbs.append(db)
+                    stale_dbs.append(db)
 
-            # Шаг 2+3: known-pattern fallback для БД без update_time
-            if no_ts_dbs:
-                no_ts_placeholders = ", ".join(
-                    ["%s"] * len(no_ts_dbs)
+            # Шаг 2+3: known-pattern для БД с NULL или stale update_time
+            if stale_dbs:
+                stale_placeholders = ", ".join(
+                    ["%s"] * len(stale_dbs)
                 )
                 col_names = ", ".join(
                     ["%s"] * len(self._KNOWN_TIMESTAMP_COLUMNS)
@@ -455,13 +461,13 @@ class MySQLClient:
                     "table_name AS tbl, "
                     "column_name AS col "
                     "FROM information_schema.columns "
-                    f"WHERE table_schema IN ({no_ts_placeholders}) "
+                    f"WHERE table_schema IN ({stale_placeholders}) "
                     f"AND column_name IN ({col_names})"
                 )
                 try:
                     cols = self.query(
                         host, sql2,
-                        params=tuple(no_ts_dbs)
+                        params=tuple(stale_dbs)
                         + tuple(self._KNOWN_TIMESTAMP_COLUMNS),
                     )
                     if cols:
