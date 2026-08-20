@@ -581,7 +581,7 @@ QComboBox:focus{
 
 QTreeWidget:focus,
 QTableWidget:focus{
-    border:1px solid {accent};
+    border:none;
 }
 
 QComboBox{
