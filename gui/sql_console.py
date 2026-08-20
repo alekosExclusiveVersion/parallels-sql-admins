@@ -77,7 +77,6 @@ class SqlEditor(QPlainTextEdit):
         self._line_number_area = LineNumberArea(self)
 
         self._completer = None
-        self._popup_was_visible = False
         self._completion_timer = QTimer(self)
         self._completion_timer.setSingleShot(True)
         self._completion_timer.setInterval(120)
@@ -97,10 +96,6 @@ class SqlEditor(QPlainTextEdit):
         if completer is not None:
             completer.activated.connect(self._insert_completion)
             completer.popup().installEventFilter(self)
-            self._popup_watchdog = QTimer(self)
-            self._popup_watchdog.setInterval(80)
-            self._popup_watchdog.timeout.connect(self._watch_popup)
-            self._popup_watchdog.start()
 
     def _insert_completion(self, text: str) -> None:
         """Вставляет выбранную подсказку вместо вводимого префикса."""
@@ -169,39 +164,23 @@ class SqlEditor(QPlainTextEdit):
 
         popup = completer.popup()
 
-        if obj is popup and event.type() == QEvent.KeyPress:
-            key = event.key()
-            if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab):
-                self._accept_current_completion()
-                popup.hide()
-                return True
-            if key == Qt.Key_Escape:
+        if obj is popup:
+            if event.type() == QEvent.Hide:
                 self._completion_timer.stop()
-                completer.hide_popup()
-                return True
-            if key in (Qt.Key_Down, Qt.Key_Up):
-                return self._move_popup_cursor(key)
+            if event.type() == QEvent.KeyPress:
+                key = event.key()
+                if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab):
+                    self._accept_current_completion()
+                    popup.hide()
+                    return True
+                if key == Qt.Key_Escape:
+                    self._completion_timer.stop()
+                    completer.hide_popup()
+                    return True
+                if key in (Qt.Key_Down, Qt.Key_Up):
+                    return self._move_popup_cursor(key)
 
         return super().eventFilter(obj, event)
-
-    def _clear_esc_closing(self) -> None:
-        pass
-
-    def _watch_popup(self) -> None:
-        """Периодическая проверка видимости попапа.
-
-        На macOS нативный NSPanel закрывается при ESC на уровне Cocoa
-        до Qt event system.  eventFilter может не сработать.
-        Watchdog останавливает таймер только если попап БЫЛ видим
-        и стал скрытым (т.е. закрылся, а не ещё не открылся)."""
-        completer = self._completer
-        if completer is None:
-            return
-        popup = completer.popup()
-        visible = popup.isVisible()
-        if self._popup_was_visible and not visible:
-            self._completion_timer.stop()
-        self._popup_was_visible = visible
 
     def _move_popup_cursor(self, key: int) -> bool:
         """Перемещает подсветку попапа на одну строку (без обёртки).
