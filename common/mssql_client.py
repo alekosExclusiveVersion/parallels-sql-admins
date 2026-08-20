@@ -78,14 +78,14 @@ class MSSQLClient:
     # ----------------------------------------------------------
 
     def _open_connection(self, host: str, database: str | None = None):
-        user, password, port = registry.credentials_for(host)
+        user, password, real_host, port = registry.credentials_for(host)
         conn = None
         last_error = None
 
         for attempt in range(1, self.cfg.retry + 1):
             try:
                 conn = pymssql.connect(
-                    server=host,
+                    server=real_host,
                     port=port,
                     user=user,
                     password=password,

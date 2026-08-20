@@ -437,7 +437,7 @@ class MainWindow(QWidget):
         # целью подключения для check/search/консоли; engine (mysql/mssql)
         # нужен дереву для фирменной иконки сервера.
         labels = [
-            (spec.ui_label(), spec.host, spec.engine)
+            (spec.ui_label(), spec.host_key(), spec.engine)
             for spec in servers
         ]
         # Сначала по типу сервера (движку), внутри группы — по алфавиту.
@@ -527,7 +527,7 @@ class MainWindow(QWidget):
                 f"({new_spec.engine})"
             )
         else:
-            self.repository.update_server(spec.host, new_spec)
+            self.repository.update_server(spec.host_key(), new_spec)
             self.append_log(
                 "SUCCESS",
                 f"Server updated: {spec.host} → {new_spec.display_name()} "

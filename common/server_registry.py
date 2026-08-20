@@ -75,14 +75,23 @@ class ServerSpec:
             self.port = default_port(self.engine)
 
     def display_name(self) -> str:
+        host_port = f"{self.host}:{self.port}"
         if self.name and self.name != self.host:
-            return f"{self.name} ({self.host})"
-        return self.host
+            return f"{self.name} ({host_port})"
+        return host_port
 
     def ui_label(self) -> str:
-        """Имя для списков серверов: только Name (host скрыт),
-        при отсутствии имени — host."""
-        return self.name or self.host
+        """Имя для списков серверов: Name (host:port) или host:port."""
+        host_port = f"{self.host}:{self.port}"
+        if self.name:
+            return f"{self.name} ({host_port})"
+        return host_port
+
+    def key(self) -> tuple[str, int]:
+        return (self.host, self.port)
+
+    def host_key(self) -> str:
+        return f"{self.host}:{self.port}"
 
 
 def default_port(engine: str) -> int:
@@ -91,6 +100,18 @@ def default_port(engine: str) -> int:
     if engine == ENGINE_PGSQL:
         return config.pgsql.port
     return config.mysql.port
+
+
+def parse_host_key(host_key: str) -> tuple[str, int]:
+    """Parse 'host:port' or plain 'host' into (host, port).
+    port=0 means 'use default'."""
+    if ":" in host_key:
+        h, p = host_key.rsplit(":", 1)
+        try:
+            return h, int(p)
+        except ValueError:
+            pass
+    return host_key, 0
 
 
 class ServerRegistry:
@@ -572,30 +593,36 @@ class ServerRegistry:
     def hosts(self) -> list[str]:
         return [spec.host for spec in self.load()]
 
-    def find(self, host: str) -> ServerSpec | None:
+    def host_keys(self) -> list[str]:
+        return [spec.host_key() for spec in self.load()]
+
+    def find(self, host_key: str) -> ServerSpec | None:
+        h, p = parse_host_key(host_key)
         for spec in self.load():
-            if spec.host == host:
+            if spec.host == h and (p == 0 or spec.port == p):
                 return spec
         return None
 
-    def engine(self, host: str) -> str:
-        spec = self.find(host)
+    def engine(self, host_key: str) -> str:
+        spec = self.find(host_key)
         if spec is not None:
             return spec.engine
         return ENGINE_MYSQL
 
-    def credentials_for(self, host: str) -> tuple[str, str, int]:
-        """Возвращает (user, password, port) для подключения к хосту.
+    def credentials_for(self, host_key: str) -> tuple[str, str, str, int]:
+        """Возвращает (user, password, host, port) для подключения.
 
-        Приоритет: реквизиты сервера из реестра → глобальные из config.ini
-        соответствующей СУБД. Пустое поле в записи сервера означает
-        «взять глобальное значение» (записи без собственного пароля
-        наследуют пароль из config.ini своего движка).
+        host — реальный hostname (без порта), пригодный для SQL-клиентов.
+        Приоритет: реквизиты сервера → глобальные из config.ini.
         """
-        spec = self.find(host)
+        spec = self.find(host_key)
 
         if spec is None:
-            return config.mysql.user, config.mysql.password, config.mysql.port
+            h, _ = parse_host_key(host_key)
+            return (
+                config.mysql.user, config.mysql.password,
+                h or host_key, config.mysql.port,
+            )
 
         if spec.engine == ENGINE_MSSQL:
             user = spec.user or config.mssql.user
@@ -610,10 +637,10 @@ class ServerRegistry:
             password = spec.password or config.mysql.password
             port = spec.port or config.mysql.port
 
-        return user, password, port
+        return user, password, spec.host, port
 
-    def engine_is_mssql(self, host: str) -> bool:
-        return self.engine(host) == ENGINE_MSSQL
+    def engine_is_mssql(self, host_key: str) -> bool:
+        return self.engine(host_key) == ENGINE_MSSQL
 
     # ----------------------------------------------------------
     # Мутации
@@ -622,22 +649,34 @@ class ServerRegistry:
     def add(self, spec: ServerSpec) -> None:
         with self._lock:
             specs = self.load()
-            specs = [s for s in specs if s.host != spec.host]
+            key = spec.key()
+            specs = [s for s in specs if s.key() != key]
             specs.append(spec)
             self.save(specs)
 
-    def update(self, old_host: str, spec: ServerSpec) -> None:
+    def update(self, old_host_key: str, spec: ServerSpec) -> None:
+        h, p = parse_host_key(old_host_key)
         with self._lock:
             specs = self.load()
-            specs = [s for s in specs if s.host != old_host]
+            specs = [
+                s for s in specs
+                if not (s.host == h and s.port == p)
+            ]
             specs.append(spec)
             self.save(specs)
 
-    def remove(self, host: str) -> bool:
+    def remove(self, host_key: str) -> bool:
+        h, p = parse_host_key(host_key)
         with self._lock:
             specs = self.load()
             before = len(specs)
-            specs = [s for s in specs if s.host != host]
+            if p:
+                specs = [
+                    s for s in specs
+                    if not (s.host == h and s.port == p)
+                ]
+            else:
+                specs = [s for s in specs if s.host != h]
             if len(specs) == before:
                 return False
             self.save(specs)
@@ -647,16 +686,16 @@ class ServerRegistry:
 registry = ServerRegistry()
 
 
-def client_for(host: str):
+def client_for(host_key: str):
     """Возвращает клиент БД для сервера (MySQL, MSSQL или PostgreSQL)."""
     from common.mssql_client import mssql
 
-    if registry.engine(host) == ENGINE_MSSQL:
+    if registry.engine(host_key) == ENGINE_MSSQL:
         return mssql
 
     from common.pgsql_client import pgsql
 
-    if registry.engine(host) == ENGINE_PGSQL:
+    if registry.engine(host_key) == ENGINE_PGSQL:
         return pgsql
 
     from common.mysql_client import mysql

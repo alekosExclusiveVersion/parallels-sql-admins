@@ -88,12 +88,12 @@ class PgsqlClient:
         conn = None
         last_error = None
 
-        user, password, port = registry.credentials_for(host)
+        user, password, real_host, port = registry.credentials_for(host)
 
         for attempt in range(1, self.cfg.retry + 1):
             try:
                 conn = psycopg.connect(
-                    host=host,
+                    host=real_host,
                     port=port,
                     user=user,
                     password=password,

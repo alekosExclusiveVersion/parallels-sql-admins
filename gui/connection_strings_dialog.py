@@ -185,7 +185,7 @@ class ConnectionStringsDialog(QDialog):
                 errors.append(f"Строка {idx}: {ex}")
                 continue
 
-            if not replace and registry.find(spec.host) is not None:
+            if not replace and registry.find(spec.host_key()) is not None:
                 skipped += 1
                 continue
 
