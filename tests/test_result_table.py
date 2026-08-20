@@ -201,5 +201,47 @@ class TestMarkWorkingDatabases(unittest.TestCase):
         self.assertEqual(self._status_text(table, 0), "—")
 
 
+class TestEmptyFilterNulls(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _make_table(self):
+        table = ResultTable()
+        table.setup_columns(
+            ["Server", "Database", "Value"],
+            {0: 190, 1: 160, 2: 160},
+        )
+        return table
+
+    def _visible_rows(self, table):
+        return [
+            i for i in range(table.rowCount())
+            if not table.isRowHidden(i)
+        ]
+
+    def test_empty_filter_catches_null_string(self):
+        table = self._make_table()
+        table.add_row(["srv1", "ar_test", "Null"])
+        table.add_row(["srv1", "ar_other", "data"])
+
+        table._empty_filter_columns.add(2)
+        table.apply_filters()
+
+        visible = self._visible_rows(table)
+        self.assertEqual(visible, [0])
+
+    def test_nonempty_filter_excludes_null_string(self):
+        table = self._make_table()
+        table.add_row(["srv1", "ar_test", "Null"])
+        table.add_row(["srv1", "ar_other", "data"])
+
+        table._nonempty_filter_columns.add(2)
+        table.apply_filters()
+
+        visible = self._visible_rows(table)
+        self.assertEqual(visible, [1])
+
+
 if __name__ == "__main__":
     unittest.main()

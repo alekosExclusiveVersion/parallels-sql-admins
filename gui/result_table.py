@@ -618,12 +618,12 @@ class ResultTable(QTableWidget):
             for column in self._empty_filter_columns:
                 if column >= len(row_texts):
                     continue
-                if row_texts[column] != "":
+                if row_texts[column] not in ("", "null"):
                     return False
             for column in self._nonempty_filter_columns:
                 if column >= len(row_texts):
                     continue
-                if row_texts[column] == "":
+                if row_texts[column] in ("", "null"):
                     return False
             return True
 
