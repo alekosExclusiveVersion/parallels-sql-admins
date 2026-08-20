@@ -338,14 +338,14 @@ class TestServersTree(unittest.TestCase):
         tree.set_servers([("M", "h1", "mssql")])
 
         item = tree.topLevelItem(0)
-        self.assertEqual(tree._server_icon_key(item), "mssql")
+        self.assertEqual(tree._server_icon_key(item), "server")
 
     def test_set_servers_engine_icon_mysql(self):
         tree = ServersTree()
         tree.set_servers([("M", "h1", "mysql")])
 
         item = tree.topLevelItem(0)
-        self.assertEqual(tree._server_icon_key(item), "mysql")
+        self.assertEqual(tree._server_icon_key(item), "dns")
 
     def test_set_servers_engine_icon_fallback(self):
         tree = ServersTree()
@@ -361,7 +361,7 @@ class TestServersTree(unittest.TestCase):
         item = tree.topLevelItem(0)
         tree.reset_sizes()
 
-        self.assertEqual(tree._server_icon_key(item), "mssql")
+        self.assertEqual(tree._server_icon_key(item), "server")
 
     def test_retheme_icons_keeps_server_engine_key(self):
         tree = ServersTree()
@@ -385,8 +385,8 @@ class TestServersTree(unittest.TestCase):
 
         tree.retheme_icons()
 
-        self.assertEqual(tree._server_icon_key(mysql), "mysql")
-        self.assertEqual(tree._server_icon_key(mssql), "mssql")
+        self.assertEqual(tree._server_icon_key(mysql), "dns")
+        self.assertEqual(tree._server_icon_key(mssql), "server")
         self.assertEqual(tree._server_icon_key(oracle), "server")
         self.assertFalse(mysql.icon(0).isNull())
         self.assertFalse(mysql.child(0).icon(0).isNull())

@@ -45,6 +45,12 @@ _ENGINE_ICON_COLORS = {
     ENGINE_PGSQL: "@pgsql_brand",
 }
 
+_ENGINE_ICONS = {
+    ENGINE_MYSQL: "dns",
+    ENGINE_MSSQL: "server",
+    ENGINE_PGSQL: "account_tree",
+}
+
 
 class ServersTree(QTreeWidget):
     databasesRequested = Signal(list)        # серверы, для которых нужны размеры БД
@@ -199,21 +205,15 @@ class ServersTree(QTreeWidget):
     def _server_icon_key(self, item) -> str:
         """Имя иконки для сервера по движку (для тестов)."""
         engine = item.data(0, _ENGINE_ROLE)
-        if engine == ENGINE_MSSQL:
-            return "mssql"
-        if engine == ENGINE_PGSQL:
-            return "pgsql"
-        if engine == ENGINE_MYSQL:
-            return "mysql"
-        return "server"
+        return _ENGINE_ICONS.get(engine, "server")
 
     def _server_icon(self, item):
-        """Иконка сервера — серверный шкаф в фирменном цвете движка:
-        MySQL — синий, MSSQL — красный (токены темы, светлее на тёмной),
-        для неизвестного движка — акцент темы."""
+        """Иконка сервера: MySQL — dns, PostgreSQL — account_tree,
+        MSSQL — server, в фирменном цвете движка."""
         engine = item.data(0, _ENGINE_ROLE)
         color = _ENGINE_ICON_COLORS.get(engine, "@icon_accent")
-        return icon("server", 20, color)
+        icon_name = _ENGINE_ICONS.get(engine, "server")
+        return icon(icon_name, 20, color)
 
     def retheme_icons(self) -> None:
         """Перерисовывает иконки дерева под текущую тему (после смены

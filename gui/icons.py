@@ -109,6 +109,9 @@ _ICONS = {
         "0.9,2 2,2h16c1.1,0 2,-0.9 2,-2v-5c0,-1.1 -0.9,-2 -2,-2z "
         "M6.5,16c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 2,-0.9 2,-2 -0.9,-2 -2,-2z"
     ),
+    "account_tree": (
+        "M22,11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3z"
+    ),
     "server": (
         '<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" '
         'viewBox="0 0 24 24">'

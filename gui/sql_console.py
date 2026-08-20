@@ -704,7 +704,13 @@ class SqlConsolePanel(QWidget):
                 )
                 self.cb_server.setItemIcon(
                     self.cb_server.count() - 1,
-                    icon("server", 16, engine_icon_color(engine)),
+                    icon(
+                        {"mysql": "dns", "pgsql": "account_tree"}.get(
+                            engine, "server"
+                        ),
+                        16,
+                        engine_icon_color(engine),
+                    ),
                 )
             self._server_engines[host] = engine
 
