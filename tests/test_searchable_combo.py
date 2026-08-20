@@ -198,6 +198,59 @@ class SearchableComboBoxTest(unittest.TestCase):
         combo._on_text_changed("dev")
         self.assertEqual(self._rows(combo), ["Dev"])
 
+    def _send_key(self, widget, key):
+        from PySide6.QtGui import QKeyEvent
+        event = QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier)
+        QApplication.sendEvent(widget, event)
+        QApplication.processEvents()
+
+    def test_down_key_opens_popup(self):
+        combo = self._make()
+        popup = combo._completer.popup()
+
+        combo.lineEdit().setFocus()
+        self._send_key(combo.lineEdit(), Qt.Key_Down)
+
+        self.assertTrue(popup.isVisible())
+
+    def test_enter_confirms_selection(self):
+        combo = self._make()
+        popup = combo._completer.popup()
+
+        combo.lineEdit().setFocus()
+        self._send_key(combo.lineEdit(), Qt.Key_Down)
+        self.assertTrue(popup.isVisible())
+
+        self._send_key(popup, Qt.Key_Return)
+        self.assertFalse(popup.isVisible())
+        self.assertGreaterEqual(combo.currentIndex(), 0)
+
+    def test_escape_hides_popup(self):
+        combo = self._make()
+        popup = combo._completer.popup()
+
+        combo.lineEdit().setFocus()
+        self._send_key(combo.lineEdit(), Qt.Key_Down)
+        self.assertTrue(popup.isVisible())
+
+        self._send_key(popup, Qt.Key_Escape)
+        self.assertFalse(popup.isVisible())
+
+    def test_navigation_does_not_clear_model(self):
+        combo = self._make()
+        popup = combo._completer.popup()
+        model = combo._completer.model()
+
+        combo.lineEdit().setFocus()
+        self._send_key(combo.lineEdit(), Qt.Key_Down)
+        self.assertTrue(popup.isVisible())
+
+        initial_count = model.rowCount()
+        for _ in range(3):
+            self._send_key(popup, Qt.Key_Down)
+
+        self.assertEqual(model.rowCount(), initial_count)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -107,3 +107,36 @@ class TestSqlConsolePanel(unittest.TestCase):
         ])
 
         self.assertEqual(self.panel.current_host(), "db2.example.com")
+
+    def test_server_index_changed_emits_server_changed(self):
+        self.panel.set_servers([
+            ("Prod", "db1.example.com"),
+            ("Report", "db2.example.com"),
+        ])
+        signals = []
+        self.panel.serverChanged.connect(
+            lambda name: signals.append(name)
+        )
+
+        self.panel.cb_server.setCurrentIndex(1)
+
+        self.assertEqual(len(signals), 1)
+        self.assertEqual(signals[0], "Report")
+
+    def test_server_index_negative_does_not_emit(self):
+        self.panel.set_servers([
+            ("Prod", "db1.example.com"),
+            ("Report", "db2.example.com"),
+        ])
+        signals = []
+        self.panel.serverChanged.connect(
+            lambda name: signals.append(name)
+        )
+
+        self.panel.cb_server.setCurrentIndex(-1)
+
+        self.assertEqual(len(signals), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

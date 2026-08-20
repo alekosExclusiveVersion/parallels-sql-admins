@@ -8,6 +8,7 @@ RoundedHeader) и фильтры контекстного меню шапки «
 """
 
 import os
+import time
 import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -145,6 +146,59 @@ class ResultTableTest(unittest.TestCase):
         self.assertEqual(self.table.item(0, 3).text(), "1")
         self.assertEqual(self.table.item(1, 3).text(), "10")
         self.assertEqual(self.table.item(2, 3).text(), "2")
+
+
+class TestMarkWorkingDatabases(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _make_table(self):
+        table = ResultTable()
+        table.setup_columns(
+            ["Server", "Database", "Последнее обновление", "Статус"],
+            {0: 190, 1: 160, 2: 160, 3: 100},
+        )
+        return table
+
+    def _status_text(self, table, row):
+        idx = table.column_index("Статус")
+        return table.item(row, idx).text()
+
+    def test_mark_today_shows_working(self):
+        table = self._make_table()
+        today = time.strftime("%Y-%m-%d")
+        table.add_row(["srv1", "ar_test", f"{today} 12:00:00", ""])
+
+        table.mark_working_databases()
+
+        self.assertEqual(self._status_text(table, 0), "● Рабочая")
+
+    def test_mark_old_date_shows_date(self):
+        table = self._make_table()
+        table.add_row(["srv1", "ar_test", "2025-01-15 08:30:00", ""])
+
+        table.mark_working_databases()
+
+        self.assertEqual(self._status_text(table, 0), "2025-01-15")
+
+    def test_mark_empty_shows_dash(self):
+        table = self._make_table()
+        table.add_row(["srv1", "ar_test", "", ""])
+
+        table.mark_working_databases()
+
+        self.assertEqual(self._status_text(table, 0), "—")
+
+    def test_mark_none_ts_shows_dash(self):
+        table = self._make_table()
+        table.add_row(["srv1", "ar_test", "", ""])
+        ts_idx = table.column_index("Последнее обновление")
+        table.item(0, ts_idx).setText("")
+
+        table.mark_working_databases()
+
+        self.assertEqual(self._status_text(table, 0), "—")
 
 
 if __name__ == "__main__":
