@@ -189,17 +189,23 @@ class SearchableComboBox(QComboBox):
         if self._popup_manual:
             self._popup_manual = False
             return
+        # Сохраняем текущий индекс попапа ДО refresh — refresh() очищает
+        # модель, после чего currentIndex() становится невалидным.
+        popup = self._completer.popup()
+        popup_was_visible = popup.isVisible()
+        cur_text: str | None = None
+        if popup_was_visible:
+            idx = popup.currentIndex()
+            if idx.isValid():
+                cur_text = str(idx.data(Qt.DisplayRole) or "")
         self._completer.refresh(self._combo_items(), text, self._item_icon_name)
         if not text or not self.isVisible():
-            self._completer.popup().hide()
+            popup.hide()
             return
         exact = any(text == self.itemText(i) for i in range(self.count()))
         if exact:
-            popup = self._completer.popup()
-            if popup.isVisible():
-                cur = popup.currentIndex()
-                if cur.isValid() and cur.data(Qt.DisplayRole) == text:
-                    return
+            if popup_was_visible and cur_text == text:
+                return
             self._hide_exact_timer.start(0)
             return
         self._completer.complete()
