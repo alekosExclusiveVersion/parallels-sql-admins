@@ -77,7 +77,6 @@ class SqlEditor(QPlainTextEdit):
         self._line_number_area = LineNumberArea(self)
 
         self._completer = None
-        self._esc_closing = False
         self._completion_timer = QTimer(self)
         self._completion_timer.setSingleShot(True)
         self._completion_timer.setInterval(120)
@@ -97,8 +96,10 @@ class SqlEditor(QPlainTextEdit):
         if completer is not None:
             completer.activated.connect(self._insert_completion)
             completer.popup().installEventFilter(self)
-            from PySide6.QtWidgets import QApplication
-            QApplication.instance().installEventFilter(self)
+            self._popup_watchdog = QTimer(self)
+            self._popup_watchdog.setInterval(80)
+            self._popup_watchdog.timeout.connect(self._watch_popup)
+            self._popup_watchdog.start()
 
     def _insert_completion(self, text: str) -> None:
         """Вставляет выбранную подсказку вместо вводимого префикса."""
@@ -167,34 +168,36 @@ class SqlEditor(QPlainTextEdit):
 
         popup = completer.popup()
 
-        if event.type() == QEvent.KeyPress:
+        if obj is popup and event.type() == QEvent.KeyPress:
             key = event.key()
-
-            if obj is popup:
-                if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab):
-                    self._accept_current_completion()
-                    popup.hide()
-                    return True
-                if key == Qt.Key_Escape:
-                    self._esc_closing = True
-                    QTimer.singleShot(0, self._clear_esc_closing)
-                    self._completion_timer.stop()
-                    completer.hide_popup()
-                    return True
-                if key in (Qt.Key_Down, Qt.Key_Up):
-                    return self._move_popup_cursor(key)
-
-            if key == Qt.Key_Escape and popup.isVisible():
-                self._esc_closing = True
-                QTimer.singleShot(0, self._clear_esc_closing)
+            if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab):
+                self._accept_current_completion()
+                popup.hide()
+                return True
+            if key == Qt.Key_Escape:
                 self._completion_timer.stop()
                 completer.hide_popup()
                 return True
+            if key in (Qt.Key_Down, Qt.Key_Up):
+                return self._move_popup_cursor(key)
 
         return super().eventFilter(obj, event)
 
     def _clear_esc_closing(self) -> None:
-        self._esc_closing = False
+        pass
+
+    def _watch_popup(self) -> None:
+        """Периодическая проверка видимости попапа.
+
+        На macOS нативный NSPanel закрывается при ESC на уровне Cocoa
+        до Qt event system.  eventFilter может не сработать.
+        Watchdog останавливает таймер если попап уже скрыт."""
+        completer = self._completer
+        if completer is None:
+            return
+        popup = completer.popup()
+        if self._completion_timer.isActive() and not popup.isVisible():
+            self._completion_timer.stop()
 
     def _move_popup_cursor(self, key: int) -> bool:
         """Перемещает подсветку попапа на одну строку (без обёртки).
@@ -243,8 +246,6 @@ class SqlEditor(QPlainTextEdit):
                     completer.popup().hide()
                     return
                 if key == Qt.Key_Escape:
-                    self._esc_closing = True
-                    QTimer.singleShot(0, self._clear_esc_closing)
                     self._completion_timer.stop()
                     completer.hide_popup()
                     return
@@ -252,8 +253,6 @@ class SqlEditor(QPlainTextEdit):
         super().keyPressEvent(event)
 
     def _schedule_completion(self) -> None:
-        if self._esc_closing:
-            return
         self._completion_timer.start()
 
     def _run_completion(self) -> None:
