@@ -107,16 +107,11 @@ class SearchableComboBox(QComboBox):
 
         self._item_icon_name = "server"
         self._popup_manual = False
-        self._hide_exact_timer = QTimer(self)
-        self._hide_exact_timer.setSingleShot(True)
-        self._hide_exact_timer.timeout.connect(self._hide_if_exact)
         self._completer = SearchComboCompleter(self)
         self.setCompleter(self._completer)
         self._completer.activated.connect(self._on_activated)
         self._completer.popup().clicked.connect(self._on_popup_clicked)
         self.lineEdit().textChanged.connect(self._on_text_changed)
-        # Клик по полю открывает выпадающий список целиком (даже когда
-        # значение уже выбрано); ввод текста продолжает фильтровать.
         self.lineEdit().installEventFilter(self)
 
     # ----------------------------------------------------------
@@ -132,31 +127,42 @@ class SearchableComboBox(QComboBox):
             ):
                 self._show_popup_on_click()
                 return super().eventFilter(obj, event)
-            # --- Down/Up: навигация по попапу (когда фокус на lineEdit) ---
-            if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Up, Qt.Key_Down):
+            if event.type() == QEvent.KeyPress:
+                key = event.key()
                 popup = self._completer.popup()
-                if popup.isVisible():
-                    model = popup.model()
+                # --- Down/Up: навигация по попапу ---
+                if key in (Qt.Key_Up, Qt.Key_Down):
+                    if popup.isVisible():
+                        model = popup.model()
+                        idx = popup.currentIndex()
+                        root = popup.rootIndex()
+                        if key == Qt.Key_Down:
+                            row = (idx.row() + 1) if idx.isValid() else 0
+                        else:
+                            row = idx.row() - 1 if (idx.isValid() and idx.row() > 0) else model.rowCount(root) - 1
+                        if 0 <= row < model.rowCount(root):
+                            new_idx = model.index(row, 0, root)
+                            sm = popup.selectionModel()
+                            sm.blockSignals(True)
+                            popup.setCurrentIndex(new_idx)
+                            sm.blockSignals(False)
+                            popup.scrollTo(new_idx)
+                        return True
+                    if key == Qt.Key_Down and self.count():
+                        self._completer.refresh(
+                            self._combo_items(), self.currentText(),
+                            self._item_icon_name,
+                        )
+                        self._completer.complete()
+                        return True
+                # --- Enter/Return: подтверждение выбора ---
+                if key in (Qt.Key_Return, Qt.Key_Enter) and popup.isVisible():
                     idx = popup.currentIndex()
-                    root = popup.rootIndex()
-                    if event.key() == Qt.Key_Down:
-                        row = (idx.row() + 1) if idx.isValid() else 0
-                    else:
-                        row = idx.row() - 1 if (idx.isValid() and idx.row() > 0) else model.rowCount(root) - 1
-                    if 0 <= row < model.rowCount(root):
-                        new_idx = model.index(row, 0, root)
-                        sm = popup.selectionModel()
-                        sm.blockSignals(True)
-                        popup.setCurrentIndex(new_idx)
-                        sm.blockSignals(False)
-                        popup.scrollTo(new_idx)
-                    return True
-                if event.key() == Qt.Key_Down and self.count():
-                    self._completer.refresh(
-                        self._combo_items(), self.currentText(),
-                        self._item_icon_name,
-                    )
-                    self._completer.complete()
+                    if idx.isValid():
+                        text = idx.data(Qt.DisplayRole)
+                        if text:
+                            self._on_activated(str(text))
+                    popup.hide()
                     return True
         return super().eventFilter(obj, event)
 
@@ -189,37 +195,16 @@ class SearchableComboBox(QComboBox):
         if self._popup_manual:
             self._popup_manual = False
             return
-        # Сохраняем текущий индекс попапа ДО refresh — refresh() очищает
-        # модель, после чего currentIndex() становится невалидным.
-        popup = self._completer.popup()
-        popup_was_visible = popup.isVisible()
-        cur_text: str | None = None
-        if popup_was_visible:
-            idx = popup.currentIndex()
-            if idx.isValid():
-                cur_text = str(idx.data(Qt.DisplayRole) or "")
         self._completer.refresh(self._combo_items(), text, self._item_icon_name)
         if not text or not self.isVisible():
-            popup.hide()
+            self._completer.popup().hide()
+            return
+        if self._completer.popup().isVisible():
             return
         exact = any(text == self.itemText(i) for i in range(self.count()))
         if exact:
-            if popup_was_visible and cur_text == text:
-                return
-            self._hide_exact_timer.start(0)
             return
         self._completer.complete()
-
-    def _hide_if_exact(self) -> None:
-        """Прячет попап, если текст по-прежнему равен пункту списка.
-
-        Отложенный вызов: собственное completion-обновление editable-комбо
-        (Qt) успевает перепоказать попап сразу после ввода, поэтому hide
-        выполняем после обработки события, перепроверив состояние.
-        """
-        text = self.currentText()
-        if any(text == self.itemText(i) for i in range(self.count())):
-            self._completer.popup().hide()
 
     def refresh_completion(self) -> None:
         """Пересобирает модель подсказок под текущий текст.
@@ -240,4 +225,4 @@ class SearchableComboBox(QComboBox):
     def _on_popup_clicked(self, index) -> None:
         text = index.data(Qt.DisplayRole)
         if text:
-            self._on_activated(text)
+            self._on_activated(str(text))
