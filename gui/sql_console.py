@@ -418,13 +418,13 @@ class SqlConsolePanel(QWidget):
         self.cb_database = SearchableComboBox()
         self.cb_database.setObjectName("combo_select")
         self.cb_database._item_icon_name = "storage"
-        self.cb_database.setMinimumWidth(160)
+        self.cb_database.setMinimumWidth(180)
         self.cb_database.lineEdit().setPlaceholderText("Выберите БД…")
         self.cb_database.view().setItemDelegate(
             ComboItemDelegate(self.cb_database.view())
         )
 
-        scontrols.addWidget(self.cb_server, 2)
+        scontrols.addWidget(self.cb_server, 1)
         scontrols.addWidget(self.cb_database, 1)
 
         self.chk_write = QCheckBox("Разрешить запросы на запись")
