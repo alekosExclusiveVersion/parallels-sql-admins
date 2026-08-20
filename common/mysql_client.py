@@ -389,12 +389,14 @@ class MySQLClient:
     ) -> dict[str, str]:
         """БД, обновлённые за сегодня, для списка БД на сервере.
 
-        Один запрос к information_schema.tables с фильтром CURDATE()
-        — lightweight метаданные. Результат кэшируется 5 минут, чтобы
-        не нагружать MySQL повторными запросами.
+        Запрос к information_schema.tables без фильтра даты —
+        получаем MAX(update_time) для каждой БД. Фильтр «сегодня»
+        применяется на клиенте, чтобы не ломаться на старых MySQL
+        и иметь возможность залогировать что реально пришло.
 
-        Возвращает {db_name: 'YYYY-MM-DD HH:MM:SS'}.
-        При ошибке — тихо возвращает пустой dict (маркер не ставится).
+        Результат кэшируется 5 минут, чтобы не нагружать MySQL.
+        Возвращает {db_name: 'YYYY-MM-DD HH:MM:SS'} (только сегодняшние).
+        При ошибке — тихо возвращает пустой dict.
         """
         if not databases:
             return {}
@@ -413,15 +415,26 @@ class MySQLClient:
                 "FROM information_schema.tables "
                 f"WHERE table_schema IN ({placeholders}) "
                 "AND update_time IS NOT NULL "
-                "AND update_time >= CURDATE() "
                 "GROUP BY table_schema"
             )
             rows = self.query(host, sql, params=tuple(databases))
-            result = {
+
+            today = time.strftime("%Y-%m-%d")
+            raw = {
                 row["db"]: str(row.get("last_update") or "")
                 for row in rows
                 if row.get("db")
             }
+            result = {
+                db: ts for db, ts in raw.items()
+                if ts.startswith(today)
+            }
+
+            logger.debug(
+                f"{host}: update_times raw={len(raw)}, "
+                f"today={len(result)} "
+                f"(date={today})"
+            )
             self._update_times_cache[cache_key] = (now, result)
             return result
         except Exception as ex:

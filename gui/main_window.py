@@ -1978,6 +1978,11 @@ class MainWindow(QWidget):
             host = self.panel.current_host()
             if host and names:
                 update_times = mysql.database_update_times(host, names)
+                logger.info(
+                    f"[{host}] update_times for combo: "
+                    f"{len(update_times)} of {len(names)} "
+                    f"updated today"
+                )
                 if update_times:
                     self.panel.mark_working_database(update_times)
         except Exception as ex:
