@@ -483,7 +483,9 @@ class MySQLClient:
                                 db = row.get("db")
                                 act = row.get("act")
                                 if db and act:
-                                    result[db] = str(act)
+                                    act_str = str(act)
+                                    if db not in result or act_str > result[db]:
+                                        result[db] = act_str
                 except Exception as ex:
                     logger.warning(
                         f"{host}: known-pattern fallback "
