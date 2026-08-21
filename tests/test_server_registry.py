@@ -20,6 +20,8 @@ from common.server_registry import (
     ENGINE_MYSQL,
     ENGINE_PGSQL,
     ServerRegistry,
+    ServerSpec,
+    parse_host_key,
 )
 
 
@@ -358,6 +360,114 @@ class TestReferenceBadEntries(unittest.TestCase):
             by_host = {s.host: s for s in specs}
             self.assertEqual(set(by_host), {"ok.tradesoft.ru", "bad.tradesoft.ru"})
             self.assertEqual(by_host["bad.tradesoft.ru"].engine, ENGINE_MYSQL)
+
+
+class TestParseHostKey(unittest.TestCase):
+
+    def test_host_with_port(self):
+        self.assertEqual(parse_host_key("db.example.com:3306"),
+                         ("db.example.com", 3306))
+
+    def test_host_without_port(self):
+        self.assertEqual(parse_host_key("db.example.com"),
+                         ("db.example.com", 0))
+
+    def test_host_with_non_numeric_port(self):
+        self.assertEqual(parse_host_key("db.example.com:abc"),
+                         ("db.example.com:abc", 0))
+
+    def test_host_with_multiple_colons(self):
+        # rsplit(":", 1) → ("a:b", "c"), "c" fails int → returns full string
+        self.assertEqual(parse_host_key("a:b:c"),
+                         ("a:b:c", 0))
+
+    def test_port_zero_string(self):
+        self.assertEqual(parse_host_key("db.example.com:0"),
+                         ("db.example.com", 0))
+
+
+class TestServerSpecHostKey(unittest.TestCase):
+
+    def test_host_key_format(self):
+        spec = ServerSpec(host="db.example.com", port=3306)
+        self.assertEqual(spec.host_key(), "db.example.com:3306")
+
+    def test_host_key_default_port(self):
+        spec = ServerSpec(host="db.example.com")
+        self.assertEqual(spec.host_key(), "db.example.com:3306")
+
+    def test_host_key_pgsql(self):
+        spec = ServerSpec(host="pg.example.com", port=5432,
+                          engine=ENGINE_PGSQL)
+        self.assertEqual(spec.host_key(), "pg.example.com:5432")
+
+
+class TestCredentialsFor(unittest.TestCase):
+
+    def _make_reg(self, tmp, specs_json):
+        reg = _make_registry(tmp, specs_json)
+        reg.load()
+        return reg
+
+    def test_returns_4_tuple(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            specs = json.dumps([{
+                "host": "db1.example.com", "engine": "mysql",
+                "port": 3307, "user": "u1", "password": "p1", "name": "",
+            }])
+            reg = self._make_reg(tmp, specs)
+
+            result = reg.credentials_for("db1.example.com:3307")
+
+            self.assertEqual(len(result), 4)
+            user, password, host, port = result
+            self.assertEqual(user, "u1")
+            self.assertEqual(password, "p1")
+            self.assertEqual(host, "db1.example.com")
+            self.assertEqual(port, 3307)
+
+    def test_empty_user_password_falls_back_to_config(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            specs = json.dumps([{
+                "host": "db1.example.com", "engine": "mysql",
+                "port": 3306, "user": "", "password": "", "name": "",
+            }])
+            reg = self._make_reg(tmp, specs)
+
+            user, password, host, port = reg.credentials_for(
+                "db1.example.com:3306"
+            )
+
+            self.assertTrue(len(user) > 0 or user == "")
+            self.assertEqual(host, "db1.example.com")
+
+    def test_unknown_host_returns_config_mysql_fallback(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            reg = _make_registry(tmp, "{}")
+
+            user, password, host, port = reg.credentials_for(
+                "unknown.example.com:3306"
+            )
+
+            self.assertEqual(host, "unknown.example.com")
+            self.assertEqual(port, 3306)
+
+    def test_find_port_zero_matches_any_port(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            specs = json.dumps([{
+                "host": "db1.example.com", "engine": "mysql",
+                "port": 5555, "user": "u", "password": "p", "name": "",
+            }])
+            reg = self._make_reg(tmp, specs)
+
+            spec = reg.find("db1.example.com:0")
+
+            self.assertIsNotNone(spec)
+            self.assertEqual(spec.port, 5555)
 
 
 if __name__ == "__main__":

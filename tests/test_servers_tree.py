@@ -347,12 +347,32 @@ class TestServersTree(unittest.TestCase):
         item = tree.topLevelItem(0)
         self.assertEqual(tree._server_icon_key(item), "dns")
 
+    def test_set_servers_engine_icon_pgsql(self):
+        tree = ServersTree()
+        tree.set_servers([("P", "h1", "pgsql")])
+
+        item = tree.topLevelItem(0)
+        self.assertEqual(tree._server_icon_key(item), "account_tree")
+
     def test_set_servers_engine_icon_fallback(self):
         tree = ServersTree()
         tree.set_servers([("O", "h1", "oracle"), ("P", "h2")])
 
         self.assertEqual(tree._server_icon_key(tree.topLevelItem(0)), "server")
         self.assertEqual(tree._server_icon_key(tree.topLevelItem(1)), "server")
+
+    def test_server_icon_non_null_per_engine(self):
+        tree = ServersTree()
+        tree.set_servers([
+            ("M", "h1", "mysql"),
+            ("S", "h2", "mssql"),
+            ("P", "h3", "pgsql"),
+            ("O", "h4", "oracle"),
+        ])
+        for i in range(4):
+            item = tree.topLevelItem(i)
+            qicon = tree._server_icon(item)
+            self.assertFalse(qicon.isNull(), f"icon null for row {i}")
 
     def test_set_servers_reset_sizes_keeps_engine_icon(self):
         tree = ServersTree()

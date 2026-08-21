@@ -11,6 +11,8 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication
 
 from gui.sql_console import SqlConsolePanel
@@ -136,6 +138,122 @@ class TestSqlConsolePanel(unittest.TestCase):
         self.panel.cb_server.setCurrentIndex(-1)
 
         self.assertEqual(len(signals), 0)
+
+
+class TestSqlConsoleEngineIcons(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls._app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.panel = SqlConsolePanel()
+
+    def tearDown(self):
+        self.panel.close()
+
+    def test_three_tuple_sets_engine_role_and_icon(self):
+        self.panel.set_servers([
+            ("P", "h1", "pgsql"),
+            ("M", "h2", "mysql"),
+            ("S", "h3", "mssql"),
+        ])
+
+        self.assertEqual(self.panel.cb_server.count(), 3)
+
+        for i, expected in enumerate(["pgsql", "mysql", "mssql"]):
+            engine = self.panel.cb_server.itemData(i, Qt.UserRole + 1)
+            self.assertEqual(engine, expected)
+            qicon = self.panel.cb_server.itemIcon(i)
+            self.assertFalse(qicon.isNull())
+
+    def test_empty_engine_no_icon(self):
+        self.panel.set_servers([
+            ("O", "h1", ""),
+        ])
+
+        engine = self.panel.cb_server.itemData(0, Qt.UserRole + 1)
+        self.assertIsNone(engine)
+
+    def test_set_databases_icons_follow_engine(self):
+        self.panel.set_servers([("P", "h1", "pgsql")])
+        self.panel.cb_server.setCurrentIndex(0)
+
+        self.panel.set_databases(["db_a", "db_b"])
+
+        for i in range(self.panel.cb_database.count()):
+            qicon = self.panel.cb_database.itemIcon(i)
+            self.assertFalse(qicon.isNull())
+            engine = self.panel.cb_database.itemData(i, Qt.UserRole + 1)
+            self.assertEqual(engine, "pgsql")
+
+    def test_set_databases_restores_current_if_exists(self):
+        self.panel.set_servers([("P", "h1", "pgsql")])
+        self.panel.cb_server.setCurrentIndex(0)
+        self.panel.set_databases(["db_a", "db_b"])
+        self.panel.cb_database.setCurrentText("db_b")
+
+        self.panel.set_databases(["db_a", "db_b", "db_c"])
+
+        self.assertEqual(self.panel.cb_database.currentText(), "db_b")
+
+    def test_set_databases_clears_if_not_in_new_list(self):
+        self.panel.set_servers([("P", "h1", "pgsql")])
+        self.panel.cb_server.setCurrentIndex(0)
+        self.panel.set_databases(["db_a", "db_b"])
+        self.panel.cb_database.setCurrentText("db_b")
+
+        self.panel.set_databases(["db_x", "db_y"])
+
+        self.assertEqual(self.panel.cb_database.currentText(), "")
+
+
+class TestSqlEditorEscape(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls._app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.panel = SqlConsolePanel()
+
+    def tearDown(self):
+        self.panel.close()
+
+    def test_escape_without_popup_emits_stop_requested(self):
+        stop_signals = []
+        self.panel.stopRequested.connect(lambda: stop_signals.append(True))
+
+        self.panel.editor.setFocus()
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)
+        self.panel.editor.keyPressEvent(event)
+
+        self.assertEqual(len(stop_signals), 1)
+
+    def test_escape_inside_popup_hides_popup_no_stop(self):
+        stop_signals = []
+        self.panel.stopRequested.connect(lambda: stop_signals.append(True))
+
+        completer = self.panel.editor._completer
+        if completer is None:
+            self.skipTest("no completer set")
+        completer.set_catalog(["users", "orders"], {"users": ["id"]})
+
+        self.panel.editor.setPlainText("u")
+        context = __import__(
+            "common.sql_completion", fromlist=["analyze"]
+        ).analyze("u", 1)
+        completer.show_suggestions(context)
+
+        popup = completer.popup()
+        if not popup.isVisible():
+            self.skipTest("popup did not show")
+
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)
+        popup.keyPressEvent(event)
+
+        self.assertFalse(popup.isVisible())
+        self.assertEqual(len(stop_signals), 0)
 
 
 if __name__ == "__main__":
