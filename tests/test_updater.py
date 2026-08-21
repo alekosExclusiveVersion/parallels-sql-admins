@@ -6,6 +6,7 @@ GitHub API, логика «не спрашивать до следующей в�
 """
 
 import json
+import ssl
 import tempfile
 import unittest
 from pathlib import Path
@@ -172,6 +173,57 @@ class TestDownload(unittest.TestCase):
             with mock.patch("urllib.request.urlopen", return_value=FakeResp()):
                 updater.download("https://ex/Setup.exe", dest)
             self.assertEqual(dest.read_bytes(), b"hello")
+
+
+class TestSSLContext(unittest.TestCase):
+
+    def test_ssl_ctx_is_ssl_context(self):
+        self.assertIsInstance(updater._SSL_CTX, ssl.SSLContext)
+
+    def test_request_json_uses_ssl_context(self):
+        class FakeResp:
+            headers = {}
+
+            def read(self, sz=0):
+                return b'{"ok":true}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        with mock.patch("urllib.request.urlopen") as mock_open:
+            mock_open.return_value = FakeResp()
+            updater._request_json("https://example.com/api", timeout=5)
+            _, kwargs = mock_open.call_args
+            self.assertIs(kwargs.get("context"), updater._SSL_CTX)
+
+    def test_download_uses_ssl_context(self):
+        class FakeResp:
+            headers = {"Content-Length": "5"}
+
+            def read(self, sz=0):
+                if not hasattr(self, "_done"):
+                    self._done = False
+                if self._done:
+                    return b""
+                self._done = True
+                return b"hello"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        with tempfile.TemporaryDirectory() as td:
+            dest = Path(td) / "setup.exe"
+            with mock.patch("urllib.request.urlopen") as mock_open:
+                mock_open.return_value = FakeResp()
+                updater.download("https://ex/Setup.exe", dest)
+                _, kwargs = mock_open.call_args
+                self.assertIs(kwargs.get("context"), updater._SSL_CTX)
 
 
 if __name__ == "__main__":
