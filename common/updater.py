@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import ssl
 import subprocess
 import tempfile
 import urllib.request
@@ -35,6 +36,8 @@ SETUP_ASSET_PREFIX = "ParallelsSQLAdmin-Setup-"
 EXPECTED_PUBLISHER = "Parallels SQL Admin"
 
 _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(.*)$")
+
+_SSL_CTX = ssl.create_default_context()
 
 
 class CancelError(RuntimeError):
@@ -71,7 +74,7 @@ def _request_json(url: str, timeout: float) -> dict:
             "Accept": "application/vnd.github+json",
         },
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -161,7 +164,7 @@ def download(url: str, dest: Path, progress_cb=None) -> Path:
     req = urllib.request.Request(
         url, headers={"User-Agent": f"Parallels-SQL-Admin/{APP_VERSION}"}
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=30, context=_SSL_CTX) as resp:
         total = int(resp.headers.get("Content-Length") or 0)
         done = 0
         dest.parent.mkdir(parents=True, exist_ok=True)
