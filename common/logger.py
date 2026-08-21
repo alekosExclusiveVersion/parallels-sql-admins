@@ -93,7 +93,13 @@ class AppLogger:
 
     def _print(self, style: str, prefix: str, message: str) -> None:
         with _lock:
-            _console.print(f"[{style}]{prefix}[/{style}] {message}")
+            try:
+                _console.print(f"[{style}]{prefix}[/{style}] {message}")
+            except UnicodeEncodeError:
+                _console.print(
+                    f"[{style}]{prefix}[/{style}] "
+                    f"{message.encode('ascii', 'replace').decode()}"
+                )
 
     def info(self, message: str) -> None:
         self.logger.info(message)
