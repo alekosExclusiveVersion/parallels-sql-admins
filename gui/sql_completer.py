@@ -35,8 +35,6 @@ _ICON_BY_KIND = {
     KIND_SCRIPT: lambda: icon("content_copy", 14, "@icon_accent"),
 }
 
-_SCRIPT_BODY_ROLE = Qt.UserRole + 1
-
 
 class SqlCompleter(QCompleter):
     """Автодополнение SQL поверх редактора QPlainTextEdit."""
@@ -94,30 +92,30 @@ class SqlCompleter(QCompleter):
             self._clear_and_hide()
             return
 
-        items = suggest(
-            context,
-            tables=self._tables,
-            columns=self._columns,
-            scripts=self._scripts,
-        )
+        try:
+            items = suggest(
+                context,
+                tables=self._tables,
+                columns=self._columns,
+                scripts=self._scripts,
+            )
+        except Exception:
+            self._clear_and_hide()
+            return
 
         self._model.clear()
         for text, kind in items:
             item = QStandardItem(text)
             item.setEditable(False)
             item.setIcon(_ICON_BY_KIND.get(kind, _ICON_BY_KIND[KIND_KEYWORD])())
-            if kind == KIND_SCRIPT:
-                script_name = text[2:]  # strip "📜 "
-                for s in self._scripts:
-                    if s.get("name") == script_name:
-                        item.setData(s.get("body", ""), _SCRIPT_BODY_ROLE)
-                        break
             self._model.appendRow(item)
 
         if not items:
             self._clear_and_hide()
             return
 
+        # suggest() уже отфильтровал по prefix — Qt-фильтрация не нужна.
+        # Пустой префикс отключает внутреннюю фильтрацию QCompleter.
         self.setCompletionPrefix("")
 
         cursor = self.widget().textCursor()

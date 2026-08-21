@@ -1323,11 +1323,7 @@ class MainWindow(QWidget):
                 tab.script_name(), tab.current_text()
             )
             if saved:
-                logger.action(
-                    f"Script updated: {tab.script_name()}"
-                )
-                self._update_completion_scripts()
-                self._rebuild_scripts_menu()
+                self._on_script_saved(tab.script_name())
         return True
 
     def _clear_query_log(self):
@@ -1512,6 +1508,12 @@ class MainWindow(QWidget):
     def _update_completion_scripts(self) -> None:
         """Передаёт скрипты из ScriptStore в SqlCompleter."""
         self.panel.set_scripts(self.scripts_store.script_items())
+
+    def _on_script_saved(self, name: str) -> None:
+        """Единая точка обновления UI после сохранения/переименования скрипта."""
+        logger.action(f"Script updated: {name}")
+        self._update_completion_scripts()
+        self._rebuild_scripts_menu()
 
     def _sql_stop(self):
 
@@ -2670,8 +2672,10 @@ class MainWindow(QWidget):
         for menu in (self._menu_scripts_insert, self._menu_scripts_run):
             menu.clear()
         for item in self.scripts_store.script_items():
-            name = item["name"]
-            body = item["body"]
+            name = item.get("name", "")
+            body = item.get("body", "")
+            if not name:
+                continue
             self._menu_scripts_insert.addAction(name).triggered.connect(
                 lambda checked=False, n=name, b=body: self._open_script_tab(n, b)
             )
@@ -2685,8 +2689,7 @@ class MainWindow(QWidget):
         dialog.library.runRequested.connect(self._script_insert_to_console)
         dialog.exec()
         self.scripts_store.load_scripts()
-        self._rebuild_scripts_menu()
-        self._update_completion_scripts()
+        self._on_script_saved("manager")
 
     def _on_script_renamed(self, old_name: str, new_name: str) -> None:
         for tab in self._script_tabs:
@@ -2696,8 +2699,7 @@ class MainWindow(QWidget):
                 if idx >= 0:
                     self.console_tabs.setTabText(idx, f"Скрипт: {new_name}")
                 break
-        self._rebuild_scripts_menu()
-        self._update_completion_scripts()
+        self._on_script_saved(new_name)
 
     def _menu_update_server_actions(self):
         has = bool(self.servers_tree.selected_servers())

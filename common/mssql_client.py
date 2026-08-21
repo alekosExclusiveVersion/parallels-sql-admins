@@ -381,6 +381,7 @@ GROUP BY database_id
         password: str,
     ) -> tuple[bool, str]:
         """Проверка подключения с явными реквизитами (для диалога сервера)."""
+        conn = None
         try:
             conn = pymssql.connect(
                 server=host,
@@ -389,11 +390,15 @@ GROUP BY database_id
                 password=password,
                 login_timeout=self.cfg.connect_timeout,
             )
-            conn.close()
+            return True, ""
         except Exception as ex:
             return False, str(ex)
-
-        return True, ""
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def server_info(
         self,
@@ -403,6 +408,7 @@ GROUP BY database_id
         password: str,
     ) -> str:
         """Версия сервера MSSQL (SELECT @@VERSION)."""
+        conn = None
         try:
             conn = pymssql.connect(
                 server=host,
@@ -414,12 +420,17 @@ GROUP BY database_id
             cursor = conn.cursor(as_dict=True)
             cursor.execute("SELECT @@VERSION AS v")
             row = cursor.fetchone()
-            conn.close()
             if row and isinstance(row, dict) and row.get("v"):
                 return str(row["v"]).split("\n")[0]
             return ""
         except Exception:
             return ""
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
 
 mssql = MSSQLClient()

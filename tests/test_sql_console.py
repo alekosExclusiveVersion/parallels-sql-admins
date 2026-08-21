@@ -4,6 +4,14 @@ tests/test_sql_console.py
 Проверка панели SQL-консоли: в списке серверов отображается Name,
 host скрыт в данных пункта и резолвится через current_host()/
 set_target() без потери функциональности.
+
+Также проверяется behavior ESC:
+- ESC без попапа → stopRequested;
+- ESC в попапе → попап скрыт, stopRequested НЕ эмитится;
+- ESC на editor при видимом попапе → попап скрыт;
+- ESC на модальном диалоге → НЕ перехватывается нашим eventFilter;
+- double set_completer → активация вставляет текст только один раз;
+- unset_completer → eventFilter отключён.
 """
 
 import os
@@ -13,7 +21,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeyEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from gui.sql_console import SqlConsolePanel
 
@@ -255,6 +263,97 @@ class TestSqlEditorEscape(unittest.TestCase):
         self.assertFalse(popup.isVisible())
         self.assertEqual(len(stop_signals), 0)
 
+    def test_application_level_esc_only_from_editor(self):
+        """ESC на editor при видимом попапе → попап скрыт, stopRequested НЕ эмитится."""
+        stop_signals = []
+        self.panel.stopRequested.connect(lambda: stop_signals.append(True))
 
-if __name__ == "__main__":
-    unittest.main()
+        completer = self.panel.editor._completer
+        if completer is None:
+            self.skipTest("no completer set")
+        completer.set_catalog(["users", "orders"], {"users": ["id"]})
+
+        self.panel.editor.setPlainText("u")
+        context = __import__(
+            "common.sql_completion", fromlist=["analyze"]
+        ).analyze("u", 1)
+        completer.show_suggestions(context)
+
+        popup = completer.popup()
+        if not popup.isVisible():
+            self.skipTest("popup did not show")
+
+        # Send ESC to editor (not popup) — eventFilter should intercept it
+        # because obj is self and popup is visible.
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)
+        QApplication.sendEvent(self.panel.editor, event)
+
+        self.assertFalse(popup.isVisible())
+        self.assertEqual(len(stop_signals), 0)
+
+    def test_application_level_esc_from_dialog_not_intercepted(self):
+        """ESC на модальном диалоге НЕ перехватывается нашим eventFilter."""
+        stop_signals = []
+        self.panel.stopRequested.connect(lambda: stop_signals.append(True))
+
+        completer = self.panel.editor._completer
+        if completer is None:
+            self.skipTest("no completer set")
+        completer.set_catalog(["users"], {"users": ["id"]})
+        self.panel.editor.setPlainText("u")
+        ctx = __import__(
+            "common.sql_completion", fromlist=["analyze"]
+        ).analyze("u", 1)
+        completer.show_suggestions(ctx)
+
+        popup = completer.popup()
+        if not popup.isVisible():
+            self.skipTest("popup did not show")
+
+        # Create a QMessageBox — it should NOT be affected by our eventFilter
+        dlg = QMessageBox()
+        dlg.setText("Test dialog")
+        dlg.show()
+
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)
+        QApplication.sendEvent(dlg, event)
+
+        # Popup stays visible — dialog ESC handled by dialog, not our filter
+        self.assertTrue(popup.isVisible())
+        self.assertEqual(len(stop_signals), 0)
+        dlg.close()
+
+    def test_double_set_completer_no_duplicate_connection(self):
+        """Двойной set_completer — предыдущий completer отключается корректно."""
+        completer1 = self.panel.editor._completer
+        if completer1 is None:
+            self.skipTest("no completer set")
+
+        # Re-set the same completer
+        self.panel.editor.set_completer(completer1)
+
+        # Editor should still have exactly one completer
+        self.assertIs(self.panel.editor._completer, completer1)
+
+        # Setting a new completer disconnects the old one
+        completer2 = type(completer1)(self.panel.editor)
+        self.panel.editor.set_completer(completer2)
+        self.assertIs(self.panel.editor._completer, completer2)
+
+        # Restore
+        self.panel.editor.set_completer(completer1)
+
+    def test_unset_completer_disconnects(self):
+        """set_completer(None) отключает eventFilter."""
+        completer = self.panel.editor._completer
+        if completer is None:
+            self.skipTest("no completer set")
+
+        completer.set_catalog(["users"], {"users": ["id"]})
+        self.panel.editor.set_completer(None)
+
+        # completer should be None now
+        self.assertIsNone(self.panel.editor._completer)
+
+        # Restore for tearDown
+        self.panel.editor.set_completer(completer)

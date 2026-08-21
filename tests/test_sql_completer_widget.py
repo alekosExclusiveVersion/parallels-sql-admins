@@ -5,7 +5,10 @@ tests/test_sql_completer_widget.py
 - min_len для ASCII/не-ASCII префиксов;
 - has_dot контекст;
 - force обходит min_len;
-- script_body_for возвращает тело скрипта.
+- script_body_for возвращает тело скрипта;
+- кириллица в подсказках;
+- setCompletionPrefix("") после show;
+- suggest() exception safety.
 """
 
 import os
@@ -17,7 +20,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QPlainTextEdit
 
 from common.sql_completion import CompletionContext, analyze
-from gui.sql_completer import SqlCompleter, _SCRIPT_BODY_ROLE
+from gui.sql_completer import SqlCompleter
 
 
 def _context(prefix, has_dot=False):
@@ -68,6 +71,25 @@ class TestCompleterMinLen(unittest.TestCase):
         self.completer.show_suggestions(ctx, force=True)
         self.assertTrue(self.completer.popup().isVisible())
 
+    def test_cyrillic_prefix_model_contains_items(self):
+        self.completer.set_catalog(["таблица", "тест"], {})
+        ctx = _context("т")
+        self.completer.show_suggestions(ctx)
+        self.assertTrue(self.completer.popup().isVisible())
+        self.assertGreater(self.completer._model.rowCount(), 0)
+
+    def test_completion_prefix_is_empty_after_show(self):
+        ctx = _context("us")
+        self.completer.show_suggestions(ctx)
+        self.assertEqual(self.completer.completionPrefix(), "")
+
+    def test_suggest_exception_hides_popup(self):
+        """show_suggestions не падает при некорректных данных каталога."""
+        self.completer._columns = "not_a_dict"
+        ctx = _context("us")
+        self.completer.show_suggestions(ctx, force=True)
+        self.assertFalse(self.completer.popup().isVisible())
+
 
 class TestScriptBodyFor(unittest.TestCase):
 
@@ -96,20 +118,18 @@ class TestScriptBodyFor(unittest.TestCase):
         self.assertIsNone(body)
 
     def test_script_body_set_on_model_item(self):
+        """script_body_for возвращает тело для скрипта из модели."""
         ctx = _context("My")
         self.completer.set_catalog([], {})
         self.completer.show_suggestions(ctx, force=True)
-
-        popup_model = self.completer.popup().model()
-        if popup_model is None or popup_model.rowCount() == 0:
-            self.skipTest("no items in model")
 
         source_model = self.completer._model
         for row in range(source_model.rowCount()):
             item = source_model.item(row)
             if item is None:
                 continue
-            body = item.data(_SCRIPT_BODY_ROLE)
+            text = item.text()
+            body = self.completer.script_body_for(text)
             if body is not None:
                 self.assertIsInstance(body, str)
                 self.assertTrue(len(body) > 0)

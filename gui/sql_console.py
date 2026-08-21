@@ -21,6 +21,7 @@ from PySide6.QtGui import (
     QTextCursor,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QHBoxLayout,
     QLabel,
@@ -94,11 +95,15 @@ class SqlEditor(QPlainTextEdit):
     def set_completer(self, completer) -> None:
         """Устанавливает автодополнение и перехватывает Enter/Tab/Esc
         в попапе, чтобы QPlainTextEdit не съедал эти клавиши."""
+        old = self._completer
+        if old is not None:
+            old.activated.disconnect(self._insert_completion)
+            old.popup().removeEventFilter(self)
+            QApplication.instance().removeEventFilter(self)
         self._completer = completer
         if completer is not None:
             completer.activated.connect(self._insert_completion)
             completer.popup().installEventFilter(self)
-            from PySide6.QtWidgets import QApplication
             QApplication.instance().installEventFilter(self)
 
     def _insert_completion(self, text: str) -> None:
@@ -166,12 +171,18 @@ class SqlEditor(QPlainTextEdit):
         if completer is None:
             return super().eventFilter(obj, event)
 
+        # Early-exit: пропускаем всё кроме KeyPress/Hide — оптимизация
+        # для app-level eventFilter (qApp ловит каждое событие).
+        etype = event.type()
+        if etype not in (QEvent.KeyPress, QEvent.Hide):
+            return super().eventFilter(obj, event)
+
         popup = completer.popup()
 
         if obj is popup:
-            if event.type() == QEvent.Hide:
+            if etype == QEvent.Hide:
                 self._completion_timer.stop()
-            if event.type() == QEvent.KeyPress:
+            if etype == QEvent.KeyPress:
                 key = event.key()
                 if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab):
                     self._accept_current_completion()
@@ -184,12 +195,15 @@ class SqlEditor(QPlainTextEdit):
                 if key in (Qt.Key_Down, Qt.Key_Up):
                     return self._move_popup_cursor(key)
 
-        # Application-level: ESC вне попапа (Windows — фокус "в воздухе").
-        if obj is not popup and event.type() == QEvent.KeyPress:
-            if event.key() == Qt.Key_Escape and popup.isVisible():
-                self._completion_timer.stop()
-                completer.hide_popup()
-                return True
+        # Application-level ESC: перехватываем только когда фокус на
+        # НАШЕМ редакторе — не на диалогах/меню/других виджетах.
+        if (obj is self
+                and etype == QEvent.KeyPress
+                and event.key() == Qt.Key_Escape
+                and popup.isVisible()):
+            self._completion_timer.stop()
+            completer.hide_popup()
+            return True
 
         return super().eventFilter(obj, event)
 
