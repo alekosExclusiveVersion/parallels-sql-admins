@@ -327,6 +327,31 @@ class PgsqlClient:
 
         return True, ""
 
+    def server_info(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+    ) -> str:
+        """Версия сервера PostgreSQL (SELECT version())."""
+        try:
+            psycopg = _load_psycopg()
+            conn = psycopg.connect(
+                host=host,
+                port=port,
+                user=user,
+                password=password,
+                connect_timeout=self.cfg.connect_timeout,
+            )
+            with conn.cursor() as cur:
+                cur.execute("SELECT version()")
+                row = cur.fetchone()
+            conn.close()
+            return row[0] if row else ""
+        except Exception:
+            return ""
+
     # ----------------------------------------------------------
     # Размеры БД и таблиц
     # ----------------------------------------------------------

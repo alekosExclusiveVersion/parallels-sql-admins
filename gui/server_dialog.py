@@ -41,7 +41,7 @@ from gui.worker_thread import WorkerHost
 
 
 class _TestWorker(QObject):
-    finished = Signal(bool, str)
+    finished = Signal(bool, str, str)
 
     def run(self):
         from common.mssql_client import mssql
@@ -60,7 +60,15 @@ class _TestWorker(QObject):
             self._user,
             self._password,
         )
-        self.finished.emit(ok, message)
+        version = ""
+        if ok:
+            version = client.server_info(
+                self._host,
+                self._port,
+                self._user,
+                self._password,
+            )
+        self.finished.emit(ok, message, version)
 
     def set_request(self, host, port, engine, user, password):
         self._host = host
@@ -244,16 +252,19 @@ class ServerDialog(QDialog):
         host.worker.finished.connect(self._on_test_finished)
         host.thread.start()
 
-    def _on_test_finished(self, ok: bool, message: str) -> None:
+    def _on_test_finished(self, ok: bool, message: str, version: str) -> None:
         self.btn_test.setEnabled(True)
         self.btn_test.setText("Проверить соединение")
         self._test_host = None
 
         if ok:
+            text = "Connection successful."
+            if version:
+                text += f"\n\nСервер: {version}"
             QMessageBox.information(
                 self,
                 "Test Connection",
-                "Connection successful.",
+                text,
             )
         else:
             QMessageBox.warning(

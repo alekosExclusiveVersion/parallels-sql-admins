@@ -395,6 +395,32 @@ GROUP BY database_id
 
         return True, ""
 
+    def server_info(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+    ) -> str:
+        """Версия сервера MSSQL (SELECT @@VERSION)."""
+        try:
+            conn = pymssql.connect(
+                server=host,
+                port=port,
+                user=user,
+                password=password,
+                login_timeout=self.cfg.connect_timeout,
+            )
+            cursor = conn.cursor(as_dict=True)
+            cursor.execute("SELECT @@VERSION AS v")
+            row = cursor.fetchone()
+            conn.close()
+            if row and row.get("v"):
+                return row["v"].split("\n")[0]
+            return ""
+        except Exception:
+            return ""
+
 
 mssql = MSSQLClient()
 

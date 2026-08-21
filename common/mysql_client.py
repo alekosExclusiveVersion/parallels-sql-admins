@@ -695,6 +695,33 @@ class MySQLClient:
 
         return True, ""
 
+    def server_info(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+    ) -> str:
+        """Версия сервера MySQL (SELECT VERSION())."""
+        try:
+            conn = pymysql.connect(
+                host=host,
+                port=port,
+                user=user,
+                password=password,
+                connect_timeout=self.cfg.connect_timeout,
+                cursorclass=DictCursor,
+                autocommit=True,
+                charset="utf8mb4",
+            )
+            with conn.cursor() as cur:
+                cur.execute("SELECT VERSION() AS v")
+                row = cur.fetchone()
+            conn.close()
+            return row["v"] if row else ""
+        except Exception:
+            return ""
+
     def server_catalog(
         self,
         host: str,
