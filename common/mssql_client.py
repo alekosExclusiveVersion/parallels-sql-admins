@@ -415,8 +415,8 @@ GROUP BY database_id
             cursor.execute("SELECT @@VERSION AS v")
             row = cursor.fetchone()
             conn.close()
-            if row and row.get("v"):
-                return row["v"].split("\n")[0]
+            if row and isinstance(row, dict) and row.get("v"):
+                return str(row["v"]).split("\n")[0]
             return ""
         except Exception:
             return ""

@@ -118,7 +118,7 @@ class SqlCompleter(QCompleter):
             self._clear_and_hide()
             return
 
-        self.setCompletionPrefix(prefix)
+        self.setCompletionPrefix("")
 
         cursor = self.widget().textCursor()
         rect = self.widget().cursorRect(cursor)

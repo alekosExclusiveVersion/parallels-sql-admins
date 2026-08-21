@@ -1326,6 +1326,8 @@ class MainWindow(QWidget):
                 logger.action(
                     f"Script updated: {tab.script_name()}"
                 )
+                self._update_completion_scripts()
+                self._rebuild_scripts_menu()
         return True
 
     def _clear_query_log(self):

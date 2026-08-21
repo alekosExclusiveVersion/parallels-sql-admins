@@ -98,6 +98,8 @@ class SqlEditor(QPlainTextEdit):
         if completer is not None:
             completer.activated.connect(self._insert_completion)
             completer.popup().installEventFilter(self)
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().installEventFilter(self)
 
     def _insert_completion(self, text: str) -> None:
         """Вставляет выбранную подсказку вместо вводимого префикса."""
@@ -181,6 +183,13 @@ class SqlEditor(QPlainTextEdit):
                     return True
                 if key in (Qt.Key_Down, Qt.Key_Up):
                     return self._move_popup_cursor(key)
+
+        # Application-level: ESC вне попапа (Windows — фокус "в воздухе").
+        if obj is not popup and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Escape and popup.isVisible():
+                self._completion_timer.stop()
+                completer.hide_popup()
+                return True
 
         return super().eventFilter(obj, event)
 
