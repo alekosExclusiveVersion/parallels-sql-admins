@@ -7,10 +7,13 @@
     {"host": "kz1.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "kz1"},
     {"host": "p5g21.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p5g21"},
     {"host": "p5g29.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p5g29"},
+    {"host": "p5ru3.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p5ru3"},
     {"host": "p7ru1.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru1"},
     {"host": "p7ru2.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru2"},
     {"host": "p7ru3.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru3"},
     {"host": "p7ru4.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru4"},
     {"host": "p7ru5.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru5"},
-    {"host": "p7ru8.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru8"}
+    {"host": "p7ru8.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru8"},
+    {"host": "pg-sup.tradesoft.corp", "engine": "pgsql", "port": 5432, "name": "pg5432"},
+    {"host": "pg-sup.tradesoft.corp", "engine": "pgsql", "port": 45432, "name": "pg45432"}
 ]
