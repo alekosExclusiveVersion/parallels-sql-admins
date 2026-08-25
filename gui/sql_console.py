@@ -74,6 +74,7 @@ class SqlEditor(QPlainTextEdit):
     """Редактор SQL с нумерацией строк и подсветкой текущей строки."""
 
     escapePressed = Signal()
+    scriptInsertRequested = Signal(str, str)  # (body, prefix)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -106,6 +107,23 @@ class SqlEditor(QPlainTextEdit):
             completer.popup().installEventFilter(self)
             QApplication.instance().installEventFilter(self)
 
+    def _remove_completion_prefix(self) -> str:
+        """Удаляет введённый префикс перед попапом и возвращает его.
+
+        Если префикса нет — возвращает пустую строку, редактор не трогает.
+        Явно перемещает курсор в конец, чтобы работать корректно независимо
+        от текущей позиции (например, сразу после setPlainText).
+        """
+        if self._completer is None:
+            return ""
+        prefix = self._completer.completionPrefix()
+        if prefix:
+            tc = self.textCursor()
+            tc.movePosition(QTextCursor.End)
+            tc.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor, len(prefix))
+            tc.removeSelectedText()
+        return prefix or ""
+
     def _insert_completion(self, text: str) -> None:
         """Вставляет выбранную подсказку вместо вводимого префикса."""
         if self._completer is None:
@@ -113,15 +131,9 @@ class SqlEditor(QPlainTextEdit):
 
         body = self._completer.script_body_for(text)
         if body is not None:
-            tc = self.textCursor()
-            tc.movePosition(QTextCursor.End)
-            current = self.toPlainText()
-            if current and not current.endswith("\n"):
-                tc.insertText("\n")
-            tc.insertText("\n\n\n")
-            tc.insertText(body)
-            self.setTextCursor(tc)
             self._completer.hide_popup()
+            prefix = self._remove_completion_prefix()
+            self.scriptInsertRequested.emit(body, prefix)
             return
 
         tc = self.textCursor()
@@ -354,6 +366,7 @@ class SqlConsolePanel(QWidget):
     searchStopRequested = Signal()
     catalogRequested = Signal(str, str)      # запросить каталог таблиц/колонок
     scopeEnabledChanged = Signal(bool)       # доступность скоупа (не busy)
+    scriptInsertFromEditor = Signal(str, str)  # вставка скрипта из автодополнения (body, prefix)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -519,6 +532,7 @@ class SqlConsolePanel(QWidget):
         self._completer = SqlCompleter(self.editor)
         self.editor.set_completer(self._completer)
         self.editor.escapePressed.connect(self.stopRequested)
+        self.editor.scriptInsertRequested.connect(self.scriptInsertFromEditor)
 
         self._catalog_timer = QTimer(self)
         self._catalog_timer.setSingleShot(True)
@@ -798,11 +812,22 @@ class SqlConsolePanel(QWidget):
     def script_text(self) -> str:
         return self.editor.toPlainText()
 
-    def insert_script(self, text: str) -> None:
+    def _focus_end(self) -> None:
+        """Ставит курсор в конец редактора и возвращает ему фокус."""
+        cursor = self.editor.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        self.editor.setTextCursor(cursor)
+        self.editor.setFocus()
+
+    def _clean_script_text(self, text: str) -> str:
+        """Нормализует текст скрипта; пустой (или whitespace-only) → ''."""
+        return text.strip() if isinstance(text, str) else ""
+
+    def insert_script(self, text: str) -> bool:
         """Вставляет текст скрипта в конец редактора с отступом 3 строки."""
-        text = text.strip()
+        text = self._clean_script_text(text)
         if not text:
-            return
+            return False
         cursor = self.editor.textCursor()
         cursor.movePosition(QTextCursor.End)
         current = self.editor.toPlainText()
@@ -811,8 +836,24 @@ class SqlConsolePanel(QWidget):
                 cursor.insertText("\n")
             cursor.insertText("\n\n\n")
         cursor.insertText(text)
-        self.editor.setTextCursor(cursor)
-        self.editor.setFocus()
+        self._focus_end()
+        return True
+
+    def replace_script(self, text: str) -> bool:
+        """Заменяет всё содержимое редактора на текст скрипта.
+
+        Замена выполняется через QTextCursor (selectAll + insertText), а не
+        setPlainText — так сохраняется история отмены: случайную замену можно
+        откатить через Ctrl+Z.
+        """
+        text = self._clean_script_text(text)
+        if not text:
+            return False
+        cursor = self.editor.textCursor()
+        cursor.select(QTextCursor.SelectionType.Document)
+        cursor.insertText(text)
+        self._focus_end()
+        return True
 
     # ----------------------------------------------------------
     # Запуск

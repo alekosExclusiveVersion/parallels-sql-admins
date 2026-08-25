@@ -67,6 +67,7 @@ class ScriptStore:
                     self._scripts = [
                         s for s in data
                         if isinstance(s, dict) and s.get("name")
+                        and isinstance(s.get("body"), str)
                     ]
             except (OSError, json.JSONDecodeError):
                 self._scripts = []
