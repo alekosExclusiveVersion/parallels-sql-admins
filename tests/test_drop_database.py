@@ -257,6 +257,11 @@ class TestRemoveDatabase(unittest.TestCase):
         self.tree.apply_databases("h1", ["db1", "db2", "db3"])
         self.tree.apply_databases("h2", ["pgdb1"])
 
+    def tearDown(self):
+        self.tree.close()
+        self.tree.deleteLater()
+        self.tree = None
+
     def test_removes_correct_node(self):
         self.tree.remove_database("h1", "db2")
 
@@ -302,6 +307,11 @@ class TestContextMenuDropSignal(unittest.TestCase):
         self.tree.apply_databases("h1", ["testdb"])
         self.tree.apply_databases("h2", ["mysqldb"])
         self.tree.apply_databases("h3", ["pgdb"])
+
+    def tearDown(self):
+        self.tree.close()
+        self.tree.deleteLater()
+        self.tree = None
 
     def _get_db_item(self, server_index, db_name):
         server_item = self.tree.topLevelItem(server_index)
