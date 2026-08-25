@@ -23,7 +23,12 @@ from PySide6.QtWidgets import (
 
 from gui.icons import icon
 
-from common.server_registry import ENGINE_MSSQL, ENGINE_MYSQL, ENGINE_PGSQL
+from common.server_registry import (
+    ENGINE_MSSQL,
+    ENGINE_MYSQL,
+    ENGINE_PGSQL,
+    registry,
+)
 
 _PLACEHOLDER = "…"
 _LOADING = "Загрузка…"
@@ -60,6 +65,7 @@ class ServersTree(QTreeWidget):
     addServerRequested = Signal()
     editServerRequested = Signal(str)        # server
     removeServerRequested = Signal(str)      # server
+    dropDatabaseRequested = Signal(str, str)  # server, database
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -276,6 +282,20 @@ class ServersTree(QTreeWidget):
             server_item.sortChildren(0, Qt.AscendingOrder)
             break
 
+    def remove_database(self, server: str, database: str) -> None:
+        """Удаляет узел БД из дерева (после DROP DATABASE)."""
+        for index in range(self.topLevelItemCount()):
+            server_item = self.topLevelItem(index)
+            if self.server_name(server_item) != server:
+                continue
+
+            for child_index in range(server_item.childCount()):
+                child = server_item.child(child_index)
+                if self.db_name(child) == database:
+                    server_item.removeChild(child)
+                    break
+            break
+
     def apply_sizes(self, server: str, sizes: dict) -> None:
         """Дописывает размеры к уже показанным узлам БД.
 
@@ -479,6 +499,20 @@ class ServersTree(QTreeWidget):
             action_remove.triggered.connect(
                 lambda: self.removeServerRequested.emit(server)
             )
+
+        if item is not None and self.is_db_item(item):
+            server = self.server_name(item.parent())
+            database = self.db_name(item)
+            engine = registry.engine(server)
+
+            if engine in (ENGINE_MSSQL, ENGINE_PGSQL):
+                action_drop = menu.addAction(
+                    icon("delete_outline", 16, "@icon_danger"),
+                    f"Удалить БД «{database}»",
+                )
+                action_drop.triggered.connect(
+                    lambda s=server, d=database: self.dropDatabaseRequested.emit(s, d)
+                )
 
         menu.exec(self.viewport().mapToGlobal(pos))
 

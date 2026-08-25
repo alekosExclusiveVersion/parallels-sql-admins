@@ -379,6 +379,38 @@ class PgsqlClient:
                     (int(connection_id),),
                 )
 
+    # ----------------------------------------------------------
+    # Удаление БД
+    # ----------------------------------------------------------
+
+    def drop_database(self, host: str, database: str) -> None:
+        """Прерывает активные бэкинги и удаляет базу данных (PostgreSQL).
+
+        Соединение идёт на ``postgres`` (DB по умолчанию) — пул
+        ``(host, "postgres")``.
+        """
+        with self.connect(host) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT pid "
+                    "FROM pg_stat_activity "
+                    "WHERE datname = %s",
+                    (database,),
+                )
+                rows = cur.fetchall() or []
+                for row in rows:
+                    pid = row.get("pid") if isinstance(row, dict) else row[0]
+                    if pid:
+                        try:
+                            cur.execute(
+                                "SELECT pg_terminate_backend(%s)",
+                                (int(pid),),
+                            )
+                        except Exception:
+                            pass
+
+                cur.execute(f'DROP DATABASE "{database}"')
+
     def server_catalog(
         self,
         host: str,

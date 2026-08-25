@@ -373,6 +373,36 @@ GROUP BY database_id
         """SPID соединения для прерывания активного запроса."""
         return self._meta_get(conn, "spid")
 
+    # ----------------------------------------------------------
+    # Удаление БД
+    # ----------------------------------------------------------
+
+    def drop_database(self, host: str, database: str) -> None:
+        """Прерывает активные сессии и удаляет базу данных (T-SQL).
+
+        Соединение идёт на master — пул ``(host, None)``.
+        """
+        escaped = _escape_bracket(database)
+
+        with self.connect(host) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT session_id "
+                    "FROM sys.dm_exec_sessions "
+                    "WHERE database_id = DB_ID(%s)",
+                    (database,),
+                )
+                rows = cur.fetchall() or []
+                for row in rows:
+                    sid = row.get("session_id") if isinstance(row, dict) else row[0]
+                    if sid:
+                        try:
+                            cur.execute(f"KILL {int(sid)}")
+                        except Exception:
+                            pass
+
+                cur.execute(f"DROP DATABASE [{escaped}]")
+
     def test_connection(
         self,
         host: str,

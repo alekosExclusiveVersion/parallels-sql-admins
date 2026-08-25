@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QCheckBox,
     QMessageBox,
+    QInputDialog,
     QPushButton,
     QTabWidget,
     QMenu,
@@ -32,6 +33,7 @@ from backend.completion_worker import CompletionWorker
 from backend.query_worker import ALL_DATABASES, QueryWorker
 from backend.db_search_worker import DatabaseSearchWorker
 from backend.db_sizes_worker import DbSizesWorker
+from backend.drop_db_worker import DropDatabaseWorker
 from common.sql_builder import sql_builder
 from common.sql_editing import build_update_sql
 from common.sql_security import is_write_statement
@@ -119,6 +121,7 @@ class MainWindow(QWidget):
         self._create_export_backend()
         self._create_search_backend()
         self._create_sizes_backend()
+        self._create_drop_db_backend()
         self._create_completion_backend()
 
         # Гарантия остановки потоков на ЛЮБОМ пути выхода: если процесс
@@ -309,6 +312,20 @@ class MainWindow(QWidget):
 
         self.sizes_worker.error.connect(
             self._sizes_error
+        )
+
+    def _create_drop_db_backend(self):
+
+        self.drop_db_host = WorkerHost(DropDatabaseWorker, self)
+        self.drop_db_thread = self.drop_db_host.thread
+        self.drop_db_worker = self.drop_db_host.worker
+
+        self.drop_db_worker.finished.connect(
+            self._drop_db_finished
+        )
+
+        self.drop_db_worker.error.connect(
+            self._drop_db_error
         )
 
     def _create_completion_backend(self):
@@ -539,6 +556,70 @@ class MainWindow(QWidget):
             )
 
         self._load_servers()
+
+    # ----------------------------------------------------------
+    # Drop Database
+    # ----------------------------------------------------------
+
+    def _drop_database(self, server: str, database: str) -> None:
+        if not server or not database:
+            return
+
+        engine = registry.engine(server)
+        if engine not in (ENGINE_MSSQL, ENGINE_PGSQL):
+            return
+
+        answer = QMessageBox.warning(
+            self,
+            "Удаление базы данных",
+            f"Вы действительно хотите удалить базу данных\n"
+            f"«{database}» на сервере «{server}»?\n\n"
+            f"Это действие необратимо.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        typed, ok = QInputDialog.getText(
+            self,
+            "Подтвердите удаление",
+            f"Введите имя базы данных для подтверждения:",
+        )
+        if not ok or typed.strip() != database:
+            self.append_log(
+                "INFO",
+                f"Удаление БД «{database}» отменено (неверное имя).",
+            )
+            return
+
+        self.append_log(
+            "INFO",
+            f"Удаление БД «{database}» на сервере «{server}»…",
+        )
+        logger.action(f"Drop database: {server}.{database}")
+
+        self.drop_db_worker.set_request(server, database)
+        self.drop_db_thread.start()
+
+    def _drop_db_finished(self) -> None:
+        host = self.drop_db_worker._host
+        database = self.drop_db_worker._database
+        self.append_log(
+            "SUCCESS",
+            f"БД «{database}» на сервере «{host}» удалена.",
+        )
+        logger.action(f"Database dropped: {host}.{database}")
+        self.servers_tree.remove_database(host, database)
+        self._sql_refresh_databases()
+
+    def _drop_db_error(self, message: str) -> None:
+        host = self.drop_db_worker._host
+        database = self.drop_db_worker._database
+        self.append_log(
+            "ERROR",
+            f"Ошибка удаления БД «{database}» на «{host}»: {message}",
+        )
 
     # ----------------------------------------------------------
     # Refresh
@@ -1062,6 +1143,10 @@ class MainWindow(QWidget):
             self._remove_server
         )
 
+        self.servers_tree.dropDatabaseRequested.connect(
+            self._drop_database
+        )
+
         self.btn_log_clear.clicked.connect(
             lambda: (
                 self.log.clear(),
@@ -1138,6 +1223,10 @@ class MainWindow(QWidget):
 
         self.panel.searchStopRequested.connect(
             self._search_stop
+        )
+
+        self.panel.scriptInsertFromEditor.connect(
+            self._script_insert_to_console
         )
 
         content.addWidget(body_splitter, 1)
@@ -1285,10 +1374,42 @@ class MainWindow(QWidget):
         self._script_tabs.append(tab)
         self.console_tabs.setCurrentIndex(index)
 
-    def _script_insert_to_console(self, text: str) -> None:
-        self.panel.insert_script(text)
+    def _ask_insert_mode(self) -> str | None:
+        """Спрашивает режим вставки при непустой консоли.
+
+        Возвращает "replace" | "append" | None (отмена: кнопка, Esc, закрытие).
+        """
+        box = QMessageBox(self)
+        box.setWindowTitle("SQL-консоль не пуста")
+        box.setText("В консоли уже есть текст. Как вставить скрипт?")
+        b_replace = box.addButton("Заменить содержимое", QMessageBox.DestructiveRole)
+        b_append = box.addButton("Добавить в конец", QMessageBox.ActionRole)
+        box.addButton("Отмена", QMessageBox.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is b_replace:
+            return "replace"
+        if clicked is b_append:
+            return "append"
+        return None
+
+    def _script_insert_to_console(self, text: str, prefix: str = "") -> None:
+        mode = self._ask_insert_mode() if self.panel.script_text().strip() else "append"
         self.console_tabs.setCurrentWidget(self.panel)
-        logger.action("Script inserted into console")
+        if mode == "replace":
+            applied = self.panel.replace_script(text)
+            logger.action("Script inserted into console (replace)")
+        elif mode == "append":
+            applied = self.panel.insert_script(text)
+            logger.action("Script inserted into console (append)")
+        else:
+            if prefix:
+                cursor = self.panel.editor.textCursor()
+                cursor.insertText(prefix)
+                self.panel.editor.setTextCursor(cursor)
+            return
+        if not applied:
+            logger.action("Script insert skipped: empty text")
 
     def _script_run_requested(self, text: str) -> None:
         self._run_check_script(text)
