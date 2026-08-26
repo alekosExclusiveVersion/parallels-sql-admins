@@ -102,11 +102,14 @@ class TestPoolReuse(unittest.TestCase):
 
         self.assertEqual(self.factory.opens, 2)
 
-    def test_dead_idle_connection_is_recreated(self):
+    @patch("common.conn_pool.time")
+    def test_dead_idle_connection_is_recreated(self, mock_time):
+        mock_time.monotonic.return_value = 100.0
         with self.client.connect("h1") as c1:
             pass
 
         c1.alive = False
+        mock_time.monotonic.return_value = 106.0
 
         with self.client.connect("h1") as c2:
             self.assertIsNot(c1, c2)
