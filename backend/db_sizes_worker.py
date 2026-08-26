@@ -130,17 +130,28 @@ class DbSizesWorker(QObject):
 
             cached = self._catalog_cache.get(server)
             if ttl > 0 and cached is not None and now - cached[0] < ttl:
-                # Данные ещё свежие — отдаём из кэша без единого запроса.
                 sizes, tables = cached[1], cached[2]
                 if not self._stop:
+                    logger.action(
+                        f"TRACE sizes_cached: server={server}, dbs={len(sizes)}"
+                    )
                     self.databases.emit(server, sizes)
                     self.server_tables.emit(server, tables)
                 return
 
+            logger.action(
+                f"TRACE sizes_acquire: server={server}, context={context}"
+            )
             with self._slots:
                 if self._stop:
                     return
+                logger.action(
+                    f"TRACE sizes_start: server={server}"
+                )
                 sizes, tables = client_for(server).server_catalog(server)
+                logger.action(
+                    f"TRACE sizes_done: server={server}, dbs={len(sizes)}"
+                )
 
             if ttl > 0:
                 self._catalog_cache[server] = (

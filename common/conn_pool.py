@@ -92,6 +92,8 @@ class ConnectionPool:
     # ----------------------------------------------------------
 
     def acquire(self, host: str, database: Optional[str] = None) -> Any:
+        import logging as _log
+        _pool_log = _log.getLogger("conn_pool")
         key = (host, database)
         tid = threading.get_ident()
         now = time.monotonic()
@@ -114,7 +116,16 @@ class ConnectionPool:
         timeout = float(
             getattr(self.cfg, "acquire_timeout", self._acquire_timeout)
         )
+
+        _pool_log.info(
+            f"TRACE pool.acquire: key={key}, "
+            f"active={self.active_count}, idle={self.idle_count}"
+        )
+
         if not self._total.acquire(timeout=timeout):
+            _pool_log.info(
+                f"TRACE pool.acquire TIMEOUT global: key={key}"
+            )
             raise PoolTimeout(
                 f"pool '{self._name}': лимит одновременных соединений "
                 f"исчерпан ({self.cfg.max_connections}) дольше "
@@ -163,8 +174,15 @@ class ConnectionPool:
         )
 
     def release(self, host: str, database: Optional[str], raw_conn: Any) -> None:
+        import logging as _log
+        _pool_log = _log.getLogger("conn_pool")
         key = (host, database)
         tid = threading.get_ident()
+
+        _pool_log.info(
+            f"TRACE pool.release: key={key}, "
+            f"active={self.active_count}, idle={self.idle_count}"
+        )
 
         with self._lock:
             kp = self._entries.get(key)

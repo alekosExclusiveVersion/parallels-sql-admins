@@ -1466,6 +1466,11 @@ class MainWindow(QWidget):
             self.tabs.setCurrentIndex(0)
 
     def _apply_result_to_console(self, server: str, database: str) -> None:
+        logger.action(
+            f"TRACE apply_result: server={server}, db={database}, "
+            f"query_thread_running={self.query_thread.isRunning()}, "
+            f"db_op_thread_running={self.db_op_thread.isRunning()}"
+        )
         self.panel.set_target(server, database)
 
         self.append_log(
@@ -1632,6 +1637,9 @@ class MainWindow(QWidget):
     def _run_sql(self, sql: str):
 
         if self.query_thread.isRunning():
+            logger.action(
+                f"TRACE run_sql BLOCKED: query_thread still running"
+            )
             self.status_bar.set_status("Запрос уже выполняется. Подождите или нажмите «Остановить».")
             return
 
@@ -1733,6 +1741,10 @@ class MainWindow(QWidget):
         host = self.panel.current_host()
         if not host:
             return
+        logger.action(
+            f"TRACE server_changed: host={host}, "
+            f"query_thread_running={self.query_thread.isRunning()}"
+        )
         self._sql_refresh_databases()
 
     def _sql_scope_changed(self):
@@ -1826,6 +1838,9 @@ class MainWindow(QWidget):
     def _sql_refresh_databases(self):
 
         if self.query_thread.isRunning():
+            logger.action(
+                f"TRACE refresh_databases BLOCKED: thread still running"
+            )
             return
 
         host = self.panel.current_host()
@@ -1838,7 +1853,9 @@ class MainWindow(QWidget):
         self.panel.set_busy(True)
         self.panel.set_stop_enabled(False)
 
-        logger.action(f"Databases refresh requested: {host}")
+        logger.action(
+            f"TRACE refresh_databases: host={host}, starting query_thread"
+        )
 
         self.query_worker.set_databases_request(host)
 
@@ -1945,6 +1962,10 @@ class MainWindow(QWidget):
 
     def _sql_finished(self):
 
+        logger.action(
+            f"TRACE sql_finished: query_thread_running={self.query_thread.isRunning()}"
+        )
+
         self.table.setSortingEnabled(True)
         self.table.sync_filter_columns()
         self.table.apply_filters()
@@ -2025,6 +2046,10 @@ class MainWindow(QWidget):
         self.panel.set_busy(False)
 
     def _sql_error(self, message):
+
+        logger.action(
+            f"TRACE sql_error: {message}"
+        )
 
         self._sql_edit_pending = None
 
@@ -2277,6 +2302,11 @@ class MainWindow(QWidget):
         )
 
     def _show_databases(self, names):
+
+        logger.action(
+            f"TRACE show_databases: {len(names)} names, "
+            f"query_thread_running={self.query_thread.isRunning()}"
+        )
 
         self.panel.set_databases(names)
 

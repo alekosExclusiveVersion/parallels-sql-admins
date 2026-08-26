@@ -277,7 +277,13 @@ class QueryWorker(QObject):
     def _dispatch(self):
 
         if self._mode == "databases":
+            logger.action(
+                f"TRACE dispatch: mode=databases, host={self._host}"
+            )
             names = client_for(self._host).list_databases(self._host)
+            logger.action(
+                f"TRACE dispatch: databases loaded={len(names)}, emitting"
+            )
             self.databases.emit(names)
             return
 
@@ -293,12 +299,20 @@ class QueryWorker(QObject):
             self.error.emit("No SQL statements to run.")
             return
 
+        logger.action(
+            f"TRACE dispatch: mode=single, host={self._host}, "
+            f"db={self._database}, stmts={len(self._statements)}"
+        )
+
         self.query.emit(self._sql)
 
         client = client_for(self._host)
         started_at = time.perf_counter()
 
         try:
+            logger.action(
+                f"TRACE dispatch: acquiring connection for {self._host}.{self._database}"
+            )
             with client.connect(self._host, self._database) as conn:
                 self._register_active(
                     self._host, client.connection_id(conn)
