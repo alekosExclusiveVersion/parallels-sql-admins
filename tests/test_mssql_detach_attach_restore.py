@@ -248,9 +248,11 @@ class TestDatabaseOperationWorker(unittest.TestCase):
     def setUp(self):
         self.worker = DatabaseOperationWorker()
         self.finished = False
+        self.succeeded = False
         self.error_msg = None
 
         self.worker.finished.connect(lambda: setattr(self, 'finished', True))
+        self.worker.success.connect(lambda: setattr(self, 'succeeded', True))
         self.worker.error.connect(
             lambda msg: setattr(self, 'error_msg', msg)
         )
@@ -265,6 +267,7 @@ class TestDatabaseOperationWorker(unittest.TestCase):
 
         mock_client.drop_database.assert_called_once_with("h1", "db1")
         self.assertTrue(self.finished)
+        self.assertTrue(self.succeeded)
         self.assertIsNone(self.error_msg)
 
     @patch("backend.db_operation_worker.client_for")
@@ -277,6 +280,7 @@ class TestDatabaseOperationWorker(unittest.TestCase):
 
         mock_client.detach_database.assert_called_once_with("h1", "db1")
         self.assertTrue(self.finished)
+        self.assertTrue(self.succeeded)
 
     @patch("backend.db_operation_worker.client_for")
     def test_attach_calls_attach_database(self, mock_client_for):
@@ -293,6 +297,7 @@ class TestDatabaseOperationWorker(unittest.TestCase):
             "h1", "db1", r"C:\data\db.mdf",
         )
         self.assertTrue(self.finished)
+        self.assertTrue(self.succeeded)
 
     @patch("backend.db_operation_worker.client_for")
     def test_restore_calls_restore_database(self, mock_client_for):
@@ -310,6 +315,7 @@ class TestDatabaseOperationWorker(unittest.TestCase):
             "h1", "db1", r"C:\backups\db.bak", replace=True,
         )
         self.assertTrue(self.finished)
+        self.assertTrue(self.succeeded)
 
     @patch("backend.db_operation_worker.client_for")
     def test_error_emitted_on_exception(self, mock_client_for):
@@ -320,7 +326,8 @@ class TestDatabaseOperationWorker(unittest.TestCase):
         self.worker.set_request("h1", "db1", DbOperation.DROP)
         self.worker.run()
 
-        self.assertFalse(self.finished)
+        self.assertTrue(self.finished)
+        self.assertFalse(self.succeeded)
         self.assertIn("boom", self.error_msg)
 
     @patch("backend.db_operation_worker.client_for")
@@ -330,7 +337,8 @@ class TestDatabaseOperationWorker(unittest.TestCase):
         self.worker.set_request("h1", "db1", "invalid_op")
         self.worker.run()
 
-        self.assertFalse(self.finished)
+        self.assertTrue(self.finished)
+        self.assertFalse(self.succeeded)
         self.assertIn("Unknown operation", self.error_msg)
 
 

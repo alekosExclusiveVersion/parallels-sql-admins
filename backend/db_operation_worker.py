@@ -26,6 +26,7 @@ class DbOperation(str, Enum):
 
 class DatabaseOperationWorker(QObject):
     finished = Signal()
+    success = Signal()
     error = Signal(str)
 
     def __init__(self):
@@ -52,6 +53,7 @@ class DatabaseOperationWorker(QObject):
         self._replace = replace
 
     def run(self) -> None:
+        ok = False
         try:
             client = client_for(self._host)
 
@@ -82,9 +84,12 @@ class DatabaseOperationWorker(QObject):
                         f"Unknown operation: {self._operation}"
                     )
 
+            ok = True
+
         except Exception as ex:
             logger.exception(ex)
             self.error.emit(str(ex))
-            return
-
-        self.finished.emit()
+        finally:
+            if ok:
+                self.success.emit()
+            self.finished.emit()

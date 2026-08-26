@@ -327,6 +327,10 @@ class MainWindow(QWidget):
             self._db_op_finished
         )
 
+        self.db_op_worker.success.connect(
+            self._db_op_success
+        )
+
         self.db_op_worker.error.connect(
             self._db_op_error
         )
@@ -719,6 +723,9 @@ class MainWindow(QWidget):
         self.db_op_thread.start()
 
     def _db_op_finished(self) -> None:
+        pass
+
+    def _db_op_success(self) -> None:
         op = self.db_op_worker._operation
         host = self.db_op_worker._host
         database = self.db_op_worker._database

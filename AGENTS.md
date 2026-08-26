@@ -26,6 +26,15 @@ Rules:
 
 - macOS: `pyinstaller "Parallels SQL Admin.spec" --noconfirm`
 - CI builds for Windows + Ubuntu (GitHub Actions)
+- **Always rebuild** after every code change that affects the app (GUI, backend, common). Run `pyinstaller` and verify `CFBundleShortVersionString` in `dist/Parallels SQL Admin.app/Contents/Info.plist` before committing.
+
+## Security
+
+- **No secrets, keys, passwords, or encryption material** in the repository
+- `servers.json` contains encrypted passwords — never commit unencrypted credentials
+- `config.ini` may contain empty password fields — never populate them with real credentials
+- `.env`, `*.key`, `*.pem`, `*.secret` files must never be committed
+- If you accidentally stage a secret, remove it from the index before committing
 
 ## Code Style
 
