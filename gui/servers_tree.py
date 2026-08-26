@@ -508,7 +508,7 @@ class ServersTree(QTreeWidget):
                 menu.addSeparator()
 
                 action_attach = menu.addAction(
-                    icon("add", 16, "@icon_accent"),
+                    icon("attach", 16, "@icon_accent"),
                     "Присоединить БД…",
                 )
                 action_attach.triggered.connect(
@@ -516,7 +516,7 @@ class ServersTree(QTreeWidget):
                 )
 
                 action_restore = menu.addAction(
-                    icon("add", 16, "@icon_accent"),
+                    icon("restore", 16, "@icon_accent"),
                     "Восстановить из бэкапа…",
                 )
                 action_restore.triggered.connect(
@@ -539,7 +539,7 @@ class ServersTree(QTreeWidget):
 
             if engine == ENGINE_MSSQL:
                 action_detach = menu.addAction(
-                    icon("delete_outline", 16, "@icon_danger"),
+                    icon("detach", 16, "@icon_danger"),
                     f"Отсоединить БД «{database}»",
                 )
                 action_detach.triggered.connect(
