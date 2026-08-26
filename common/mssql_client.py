@@ -378,30 +378,21 @@ GROUP BY database_id
     # ----------------------------------------------------------
 
     def drop_database(self, host: str, database: str) -> None:
-        """Прерывает активные сессии и удаляет базу данных (T-SQL).
+        """Переводит БД в SINGLE_USER (отбивает все соединения) и удаляет.
 
-        Соединение идёт на master — пул ``(host, None)``.
+        Использует ``SET SINGLE_USER WITH ROLLBACK IMMEDIATE`` —
+        встроенный MSSQL-механизм вместо ручного KILL.  Каждый шаг
+        идёт отдельным ``query()``, чтобы пул выдал свежее соединение.
         """
         escaped = _escape_bracket(database)
 
-        with self.connect(host) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT session_id "
-                    "FROM sys.dm_exec_sessions "
-                    "WHERE database_id = DB_ID(%s)",
-                    (database,),
-                )
-                rows = cur.fetchall() or []
-                for row in rows:
-                    sid = row.get("session_id") if isinstance(row, dict) else row[0]
-                    if sid:
-                        try:
-                            cur.execute(f"KILL {int(sid)}")
-                        except Exception:
-                            pass
+        self.query(
+            host,
+            f"ALTER DATABASE [{escaped}] "
+            f"SET SINGLE_USER WITH ROLLBACK IMMEDIATE",
+        )
 
-                cur.execute(f"DROP DATABASE [{escaped}]")
+        self.query(host, f"DROP DATABASE [{escaped}]")
 
     def test_connection(
         self,

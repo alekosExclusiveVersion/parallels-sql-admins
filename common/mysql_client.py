@@ -48,6 +48,9 @@ def _is_transient(ex: Exception) -> bool:
         code = ex.args[0]
         if isinstance(code, int):
             return code in _RETRY_ERRNOS
+    import zlib
+    if isinstance(ex, zlib.error):
+        return True
     return False
 
 
@@ -111,6 +114,7 @@ class MySQLClient:
                     cursorclass=DictCursor,
                     autocommit=True,
                     charset="utf8mb4",
+                    compress=False,
                 )
                 break
 

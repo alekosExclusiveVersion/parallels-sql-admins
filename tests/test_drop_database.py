@@ -102,73 +102,44 @@ class TestMSSQLDropDatabase(unittest.TestCase):
 
     def setUp(self):
         self.client = MSSQLClient(cfg=_FakeConfig())
-        self.conn = _FakeMSSQLConn()
-        self.client._pool.acquire = MagicMock(return_value=self.conn)
-        self.client._pool.release = MagicMock()
+        self.executions: list[str] = []
 
-    def test_drop_calls_kill_and_drop(self):
-        self.conn.result = [{"session_id": 10}, {"session_id": 20}]
+        def fake_query(host, sql, database=None, params=None):
+            self.executions.append(sql)
+            return []
 
+        self.client.query = fake_query
+
+    def test_drop_calls_single_user_and_drop(self):
         self.client.drop_database("srv", "mydb")
 
-        sqls = [e[0] for e in self.conn.executions]
-        self.assertTrue(any("KILL 10" in s for s in sqls))
-        self.assertTrue(any("KILL 20" in s for s in sqls))
-        self.assertTrue(any("DROP DATABASE [mydb]" in s for s in sqls))
-
-    def test_drop_no_active_sessions(self):
-        self.conn.result = []
-
-        self.client.drop_database("srv", "mydb")
-
-        sqls = [e[0] for e in self.conn.executions]
-        self.assertFalse(any("KILL" in s for s in sqls))
-        self.assertTrue(any("DROP DATABASE [mydb]" in s for s in sqls))
+        self.assertEqual(len(self.executions), 2)
+        self.assertIn("SINGLE_USER", self.executions[0])
+        self.assertIn("DROP DATABASE [mydb]", self.executions[1])
 
     def test_drop_escapes_brackets(self):
-        self.conn.result = []
-
         self.client.drop_database("srv", "my]db")
 
-        sqls = [e[0] for e in self.conn.executions]
-        self.assertTrue(any("DROP DATABASE [my]]db]" in s for s in sqls))
+        self.assertEqual(len(self.executions), 2)
+        self.assertIn("DROP DATABASE [my]]db]", self.executions[1])
 
-    def test_drop_kill_error_ignored(self):
-        self.conn.result = [{"session_id": 10}]
+    def test_drop_single_user_first(self):
+        self.client.drop_database("srv", "testdb")
 
-        def bad_execute(sql, params=None):
-            if "KILL" in sql:
-                raise RuntimeError("kill failed")
-            self.conn.executions.append((sql, params))
+        self.assertEqual(len(self.executions), 2)
+        self.assertIn("SINGLE_USER", self.executions[0])
+        self.assertIn("DROP DATABASE", self.executions[1])
 
-        self.conn._orig_execute = self.conn.executions
-        self.conn.executions = []
-        original_cursor = self.conn.cursor
+    def test_drop_propagates_error(self):
+        def failing_query(host, sql, database=None, params=None):
+            if "DROP DATABASE" in sql:
+                raise RuntimeError("Permission denied")
+            return []
 
-        class PatchedCursor:
-            def __init__(inner_self):
-                inner_self._owner = self.conn
+        self.client.query = failing_query
 
-            def __enter__(inner_self):
-                return inner_self
-
-            def __exit__(inner_self, *args):
-                return False
-
-            def execute(inner_self, sql, params=None):
-                if "KILL" in sql:
-                    raise RuntimeError("kill failed")
-                self.conn.executions.append((sql, params))
-
-            def fetchall(inner_self):
-                return self.conn.result
-
-        self.conn.cursor = lambda: PatchedCursor()
-
-        self.client.drop_database("srv", "mydb")
-
-        sqls = [e[0] for e in self.conn.executions]
-        self.assertTrue(any("DROP DATABASE" in s for s in sqls))
+        with self.assertRaises(RuntimeError):
+            self.client.drop_database("srv", "mydb")
 
 
 # ----------------------------------------------------------
