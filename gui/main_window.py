@@ -115,6 +115,12 @@ class MainWindow(QWidget):
         # перенаправляет результат в _sql_edit_finished, а не рендерит таблицу.
         self._sql_edit_pending: dict | None = None
 
+        # Единый флаг «SQL-операция выполняется»: True пока поток работает.
+        # set_busy(True) вызывается при запуске, set_busy(False) — ровно
+        # один раз в _sql_finished (по query_thread.finished), что
+        # гарантирует отсутствие гонок между потоком и GUI.
+        self._sql_busy = False
+
         theme_styles.bootstrap()
         set_icon_theme(theme_styles.theme_colors())
 
@@ -228,7 +234,7 @@ class MainWindow(QWidget):
             self._sql_target_stopped
         )
 
-        self.query_worker.finished.connect(
+        self.query_thread.finished.connect(
             self._sql_finished
         )
 
@@ -1636,9 +1642,9 @@ class MainWindow(QWidget):
 
     def _run_sql(self, sql: str):
 
-        if self.query_thread.isRunning():
+        if self._sql_busy:
             logger.action(
-                f"TRACE run_sql BLOCKED: query_thread still running"
+                f"TRACE run_sql BLOCKED: _sql_busy=True"
             )
             self.status_bar.set_status("Запрос уже выполняется. Подождите или нажмите «Остановить».")
             return
@@ -1686,6 +1692,7 @@ class MainWindow(QWidget):
         self.status_bar.set_status(
             f"Выполнение на {len(targets)} цели(ях)..."
         )
+        self._sql_busy = True
         self.panel.set_busy(True)
 
         if (
@@ -1743,7 +1750,7 @@ class MainWindow(QWidget):
             return
         logger.action(
             f"TRACE server_changed: host={host}, "
-            f"query_thread_running={self.query_thread.isRunning()}"
+            f"sql_busy={self._sql_busy}"
         )
         self._sql_refresh_databases()
 
@@ -1837,9 +1844,9 @@ class MainWindow(QWidget):
 
     def _sql_refresh_databases(self):
 
-        if self.query_thread.isRunning():
+        if self._sql_busy:
             logger.action(
-                f"TRACE refresh_databases BLOCKED: thread still running"
+                f"TRACE refresh_databases BLOCKED: _sql_busy=True"
             )
             return
 
@@ -1850,6 +1857,7 @@ class MainWindow(QWidget):
             return
 
         self.status_bar.set_status("Загрузка списка БД...")
+        self._sql_busy = True
         self.panel.set_busy(True)
         self.panel.set_stop_enabled(False)
 
@@ -1963,8 +1971,10 @@ class MainWindow(QWidget):
     def _sql_finished(self):
 
         logger.action(
-            f"TRACE sql_finished: query_thread_running={self.query_thread.isRunning()}"
+            f"TRACE sql_finished: sql_busy was True, resetting to False"
         )
+
+        self._sql_busy = False
 
         self.table.setSortingEnabled(True)
         self.table.sync_filter_columns()
@@ -2022,7 +2032,6 @@ class MainWindow(QWidget):
         self.status_bar.set_status(
             f"Остановлено ({done} из {total})"
         )
-        self.panel.set_busy(False)
         self._update_edit_buttons()
 
     def _show_query_result(self, rows, columns, message):
@@ -2043,7 +2052,6 @@ class MainWindow(QWidget):
         )
 
         self.status_bar.set_status(message)
-        self.panel.set_busy(False)
 
     def _sql_error(self, message):
 
@@ -2052,8 +2060,6 @@ class MainWindow(QWidget):
         )
 
         self._sql_edit_pending = None
-
-        self.panel.set_busy(False)
 
         self.append_log(
             "ERROR",
@@ -2259,6 +2265,7 @@ class MainWindow(QWidget):
             1000,
         )
         self.panel.set_busy(True)
+        self._sql_busy = True
         self.status_bar.set_status("Обновление ячейки...")
         self.query_thread.start()
 
@@ -2266,8 +2273,6 @@ class MainWindow(QWidget):
 
         pending = self._sql_edit_pending
         self._sql_edit_pending = None
-
-        self.panel.set_busy(False)
 
         if pending is None:
             return
@@ -2305,7 +2310,7 @@ class MainWindow(QWidget):
 
         logger.action(
             f"TRACE show_databases: {len(names)} names, "
-            f"query_thread_running={self.query_thread.isRunning()}"
+            f"sql_busy={self._sql_busy}"
         )
 
         self.panel.set_databases(names)
@@ -2503,14 +2508,14 @@ class MainWindow(QWidget):
         # убирает зависший SELECT на сервере; ждём выхода потока штатно,
         # без terminate(): принудительное убийство потока оставило бы
         # соединение в пуле навсегда занятым.
-        if self.query_thread.isRunning():
+        if self._sql_busy:
             self.query_worker.stop()
             threading.Thread(
                 target=self.query_worker.kill_active,
                 daemon=True,
             ).start()
             self.query_thread.wait(5000)
-            if self.query_thread.isRunning():
+            if self._sql_busy:
                 self.status_bar.set_status(
                     "Не удалось остановить текущий запрос."
                 )
@@ -2535,6 +2540,7 @@ class MainWindow(QWidget):
         self.status_bar.set_status(
             f"Выполнение {server}.{database}.{table}..."
         )
+        self._sql_busy = True
         self.panel.set_busy(True)
 
         self._ensure_results_visible()
