@@ -320,7 +320,7 @@ class TestDatabaseOperationWorker(unittest.TestCase):
         self.worker.set_request("h1", "db1", DbOperation.DROP)
         self.worker.run()
 
-        self.assertTrue(self.finished)
+        self.assertFalse(self.finished)
         self.assertIn("boom", self.error_msg)
 
     @patch("backend.db_operation_worker.client_for")
@@ -330,7 +330,7 @@ class TestDatabaseOperationWorker(unittest.TestCase):
         self.worker.set_request("h1", "db1", "invalid_op")
         self.worker.run()
 
-        self.assertTrue(self.finished)
+        self.assertFalse(self.finished)
         self.assertIn("Unknown operation", self.error_msg)
 
 

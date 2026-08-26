@@ -572,6 +572,10 @@ class MainWindow(QWidget):
         if engine not in (ENGINE_MSSQL, ENGINE_PGSQL, ENGINE_SQLITE):
             return
 
+        if self.db_op_thread.isRunning():
+            self.status_bar.set_status("Операция уже выполняется…")
+            return
+
         answer = QMessageBox.warning(
             self,
             "Удаление базы данных",
@@ -615,6 +619,10 @@ class MainWindow(QWidget):
         if engine != ENGINE_MSSQL:
             return
 
+        if self.db_op_thread.isRunning():
+            self.status_bar.set_status("Операция уже выполняется…")
+            return
+
         answer = QMessageBox.warning(
             self,
             "Отсоединение базы данных",
@@ -646,6 +654,10 @@ class MainWindow(QWidget):
         if engine != ENGINE_MSSQL:
             return
 
+        if self.db_op_thread.isRunning():
+            self.status_bar.set_status("Операция уже выполняется…")
+            return
+
         from gui.attach_db_dialog import AttachDatabaseDialog
 
         dlg = AttachDatabaseDialog(self)
@@ -674,6 +686,10 @@ class MainWindow(QWidget):
 
         engine = registry.engine(server)
         if engine != ENGINE_MSSQL:
+            return
+
+        if self.db_op_thread.isRunning():
+            self.status_bar.set_status("Операция уже выполняется…")
             return
 
         from gui.restore_db_dialog import RestoreDatabaseDialog
@@ -758,6 +774,7 @@ class MainWindow(QWidget):
             "ERROR",
             f"Ошибка {op_name} БД «{database}» на «{host}»: {message}",
         )
+        logger.action(f"ERROR {op_name}: {host}.{database} — {message}")
 
     # ----------------------------------------------------------
     # Refresh

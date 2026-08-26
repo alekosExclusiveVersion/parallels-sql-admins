@@ -401,12 +401,14 @@ GROUP BY database_id
         """
         escaped = _escape_bracket(database)
 
+        logger.info(f"{host}: SET SINGLE_USER [{escaped}]")
         self.query(
             host,
             f"ALTER DATABASE [{escaped}] "
             f"SET SINGLE_USER WITH ROLLBACK IMMEDIATE",
         )
 
+        logger.info(f"{host}: DROP DATABASE [{escaped}]")
         self.query(host, f"DROP DATABASE [{escaped}]")
 
     # ----------------------------------------------------------
@@ -421,15 +423,17 @@ GROUP BY database_id
         """
         escaped = _escape_bracket(database)
 
+        logger.info(f"{host}: SET SINGLE_USER [{escaped}]")
         self.query(
             host,
             f"ALTER DATABASE [{escaped}] "
             f"SET SINGLE_USER WITH ROLLBACK IMMEDIATE",
         )
 
+        logger.info(f"{host}: sp_detach_db [{escaped}]")
         self.query(
             host,
-            f"EXEC sp_detach_db N'{database}', 'true'",
+            f"EXEC sp_detach_db N'{escaped}', 'true'",
         )
 
     def _file_exists(self, host: str, path: str) -> bool:
@@ -462,6 +466,7 @@ GROUP BY database_id
 
         escaped = _escape_bracket(database)
 
+        logger.info(f"{host}: CREATE DATABASE [{escaped}] FOR ATTACH")
         self.query(
             host,
             f"CREATE DATABASE [{escaped}] "
@@ -490,6 +495,7 @@ GROUP BY database_id
         escaped = _escape_bracket(database)
         with_replace = "REPLACE" if replace else ""
 
+        logger.info(f"{host}: RESTORE DATABASE [{escaped}] FROM DISK = N'{bak_path}'")
         self.query(
             host,
             f"RESTORE DATABASE [{escaped}] "

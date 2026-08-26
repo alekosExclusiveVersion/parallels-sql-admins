@@ -85,5 +85,6 @@ class DatabaseOperationWorker(QObject):
         except Exception as ex:
             logger.exception(ex)
             self.error.emit(str(ex))
-        finally:
-            self.finished.emit()
+            return
+
+        self.finished.emit()
