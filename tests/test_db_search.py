@@ -122,9 +122,9 @@ class TestDatabaseSearch(unittest.TestCase):
             _db_names(result), ["ar_example_com", "ar_shop_ru"]
         )
         conn = factory.conns[0]
-        self.assertEqual(len(conn.executions), 1)
-        self.assertIn("SHOW DATABASES", conn.executions[0][0])
-        self.assertNotIn("psa.data_bases", conn.executions[0][0])
+        self.assertEqual(len(conn.executions), 2)
+        self.assertIn("SHOW DATABASES", conn.executions[1][0])
+        self.assertNotIn("psa.data_bases", conn.executions[1][0])
 
     def test_domain_mask_merges_psa_results(self):
         show = [{"Database": "ar_example_com"}]
@@ -170,8 +170,7 @@ class TestDatabaseSearch(unittest.TestCase):
 
         self.assertEqual(_db_names(result), ["ar_example_com"])
         conn = factory.conns[0]
-        # 3 queries: SHOW (mask), psa (fails), SHOW (base=example)
-        self.assertEqual(len(conn.executions), 3)
+        self.assertEqual(len(conn.executions), 4)
 
     def test_empty_mask_returns_empty(self):
         client, factory = self._client([{"Database": "ar_example_com"}])
@@ -193,11 +192,9 @@ class TestDatabaseSearch(unittest.TestCase):
         names = _db_names(result)
         self.assertIn("autoprice_activautoru", names)
         self.assertIn("ar_activautoru", names)
-        # 3 queries: SHOW (mask), psa, SHOW (base)
         conn = factory.conns[0]
-        self.assertEqual(len(conn.executions), 3)
-        # Third query uses base name
-        base_sql = conn.executions[2][0]
+        self.assertEqual(len(conn.executions), 4)
+        base_sql = conn.executions[3][0]
         self.assertIn("SHOW DATABASES", base_sql)
         self.assertIn("activauto", base_sql)
 
@@ -211,8 +208,8 @@ class TestDatabaseSearch(unittest.TestCase):
 
         self.assertEqual(_db_names(result), ["a_ru"])
         conn = factory.conns[0]
-        # 2 queries: SHOW (mask), psa — base search skipped
-        self.assertEqual(len(conn.executions), 2)
+        # 3 queries: SET SESSION, SHOW (mask), psa — base search skipped
+        self.assertEqual(len(conn.executions), 3)
 
     def test_base_name_with_wildcards_skipped(self):
         """*shop*.com → base='*shop*' (содержит *) → пропуск."""
@@ -223,8 +220,8 @@ class TestDatabaseSearch(unittest.TestCase):
         result = client.search_databases("h1", "*shop*.com")
 
         conn = factory.conns[0]
-        # 2 queries: SHOW (mask), psa — base search skipped
-        self.assertEqual(len(conn.executions), 2)
+        # 3 queries: SET SESSION, SHOW (mask), psa — base search skipped
+        self.assertEqual(len(conn.executions), 3)
 
     def test_base_name_with_underscore_skipped(self):
         """my_site.com → base='my_site' (содержит _) → пропуск."""
@@ -235,7 +232,7 @@ class TestDatabaseSearch(unittest.TestCase):
         result = client.search_databases("h1", "my_site.com")
 
         conn = factory.conns[0]
-        self.assertEqual(len(conn.executions), 2)
+        self.assertEqual(len(conn.executions), 3)
 
     def test_psa_returns_site(self):
         """psa возвращает site_name для найденных БД."""
