@@ -93,7 +93,7 @@ class ConnectionPool:
 
     def acquire(self, host: str, database: Optional[str] = None) -> Any:
         import logging as _log
-        _pool_log = _log.getLogger("conn_pool")
+        _pool_log = _log.getLogger("parallel-admin")
         key = (host, database)
         tid = threading.get_ident()
         now = time.monotonic()
@@ -131,12 +131,21 @@ class ConnectionPool:
                 f"исчерпан ({self.cfg.max_connections}) дольше "
                 f"{timeout:g} c"
             )
+        _pool_log.info(
+            f"TRACE pool.acquire global slot OK: key={key}"
+        )
         if not kp.slots.acquire(timeout=timeout):
+            _pool_log.info(
+                f"TRACE pool.acquire TIMEOUT per_key: key={key}"
+            )
             self._total.release()
             raise PoolTimeout(
                 f"pool '{self._name}': слишком много соединений к "
                 f"{host} ({self.cfg.max_per_key})"
             )
+        _pool_log.info(
+            f"TRACE pool.acquire per_key slot OK: key={key}"
+        )
 
         try:
             for _ in range(2):
@@ -145,7 +154,22 @@ class ConnectionPool:
 
                 if pc is not None:
                     fresh = (now - pc.last_used) < 5
-                    if fresh or self._alive is None or self._alive(pc.conn):
+                    if fresh or self._alive is None:
+                        _pool_log.info(
+                            f"TRACE pool.acquire idle reused: key={key}, "
+                            f"fresh={fresh}"
+                        )
+                        pc.last_used = now
+                        return pc.conn
+                    _pool_log.info(
+                        f"TRACE pool.acquire alive_check: key={key}"
+                    )
+                    alive = self._alive(pc.conn)
+                    _pool_log.info(
+                        f"TRACE pool.acquire alive_check done: key={key}, "
+                        f"alive={alive}"
+                    )
+                    if alive:
                         pc.last_used = now
                         return pc.conn
                     # Соединение сдохло в простое — убираем и пересоздаём
@@ -155,7 +179,13 @@ class ConnectionPool:
                     continue
 
                 # Нет свободного соединения — открываем новое.
+                _pool_log.info(
+                    f"TRACE pool.acquire open_new: key={key}"
+                )
                 conn = self._open(host, database)
+                _pool_log.info(
+                    f"TRACE pool.acquire open_new done: key={key}"
+                )
                 with self._lock:
                     pc = _PooledConn(conn)
                     pc.in_use = True
@@ -165,6 +195,9 @@ class ConnectionPool:
                     kp.conns.append(pc)
                     return conn
         except Exception:
+            _pool_log.info(
+                f"TRACE pool.acquire ERROR: key={key}"
+            )
             self._total.release()
             kp.slots.release()
             raise
@@ -175,7 +208,7 @@ class ConnectionPool:
 
     def release(self, host: str, database: Optional[str], raw_conn: Any) -> None:
         import logging as _log
-        _pool_log = _log.getLogger("conn_pool")
+        _pool_log = _log.getLogger("parallel-admin")
         key = (host, database)
         tid = threading.get_ident()
 
