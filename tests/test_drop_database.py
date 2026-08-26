@@ -2,10 +2,11 @@
 tests/test_drop_database.py
 
 Тесты фичи удаления БД:
-  - MSSQLClient.drop_database: KILL активных сессий + DROP DATABASE
+  - MSSQLClient.drop_database: SET SINGLE_USER + DROP DATABASE
   - PgSQLClient.drop_database: pg_terminate_backend + DROP DATABASE
   - ServersTree.remove_database: удаление узла БД из дерева
   - Контекстное меню: пункт «Удалить БД» только для MSSQL/PGSQL
+  - DatabaseOperationWorker: dispatch для DbOperation.DROP
 """
 
 import os
@@ -19,6 +20,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
+from backend.db_operation_worker import DatabaseOperationWorker, DbOperation
 from common.mssql_client import MSSQLClient
 from common.pgsql_client import PgsqlClient
 from common.server_registry import ENGINE_MSSQL, ENGINE_MYSQL, ENGINE_PGSQL, registry

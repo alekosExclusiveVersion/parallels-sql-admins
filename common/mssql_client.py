@@ -409,6 +409,94 @@ GROUP BY database_id
 
         self.query(host, f"DROP DATABASE [{escaped}]")
 
+    # ----------------------------------------------------------
+    # Отсоединение / Присоединение / Восстановление БД
+    # ----------------------------------------------------------
+
+    def detach_database(self, host: str, database: str) -> None:
+        """Отсоединяет БД: SINGLE_USER → sp_detach_db.
+
+        Файлы БД остаются на сервере. После отсоединения БД можно
+        скопировать и присоединить на другом сервере.
+        """
+        escaped = _escape_bracket(database)
+
+        self.query(
+            host,
+            f"ALTER DATABASE [{escaped}] "
+            f"SET SINGLE_USER WITH ROLLBACK IMMEDIATE",
+        )
+
+        self.query(
+            host,
+            f"EXEC sp_detach_db N'{database}', 'true'",
+        )
+
+    def _file_exists(self, host: str, path: str) -> bool:
+        """Проверяет существование файла на сервере через xp_fileexist."""
+        rows = self.query(
+            host,
+            "EXEC master..xp_fileexist %s",
+            params=(path,),
+        )
+        if rows and isinstance(rows[0], dict):
+            return bool(rows[0].get("File Exists"))
+        return False
+
+    def attach_database(
+        self,
+        host: str,
+        database: str,
+        mdf_path: str,
+    ) -> None:
+        """Присоединяет БД из MDF-файла.
+
+        Перед присоединением проверяет существование файла через
+        ``xp_fileexist`` — если файл не найден, выбрасывает
+        ValueError с понятным сообщением.
+        """
+        if not self._file_exists(host, mdf_path):
+            raise ValueError(
+                f"Файл не найден на сервере: {mdf_path}"
+            )
+
+        escaped = _escape_bracket(database)
+
+        self.query(
+            host,
+            f"CREATE DATABASE [{escaped}] "
+            f"ON (FILENAME = N'{mdf_path}') "
+            f"FOR ATTACH",
+        )
+
+    def restore_database(
+        self,
+        host: str,
+        database: str,
+        bak_path: str,
+        replace: bool = True,
+    ) -> None:
+        """Восстанавливает БД из резервной копии (.bak).
+
+        Перед восстановлением проверяет существование .bak через
+        ``xp_fileexist``. По умолчанию использует REPLACE
+        (перезаписывает существующую БД).
+        """
+        if not self._file_exists(host, bak_path):
+            raise ValueError(
+                f"Файл бэкапа не найден на сервере: {bak_path}"
+            )
+
+        escaped = _escape_bracket(database)
+        with_replace = "REPLACE" if replace else ""
+
+        self.query(
+            host,
+            f"RESTORE DATABASE [{escaped}] "
+            f"FROM DISK = N'{bak_path}' "
+            f"WITH {with_replace}".rstrip(),
+        )
+
     def test_connection(
         self,
         host: str,

@@ -66,6 +66,9 @@ class ServersTree(QTreeWidget):
     editServerRequested = Signal(str)        # server
     removeServerRequested = Signal(str)      # server
     dropDatabaseRequested = Signal(str, str)  # server, database
+    detachDatabaseRequested = Signal(str, str)  # server, database
+    attachDatabaseRequested = Signal(str)    # server
+    restoreDatabaseRequested = Signal(str)   # server
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -483,6 +486,7 @@ class ServersTree(QTreeWidget):
         if item is not None and self.is_server_item(item):
             server = self.server_name(item)
             label = self.display_name(item)
+            engine = registry.engine(server)
 
             action_edit = menu.addAction(
                 icon("edit", 16, "@icon_muted"),
@@ -500,6 +504,25 @@ class ServersTree(QTreeWidget):
                 lambda: self.removeServerRequested.emit(server)
             )
 
+            if engine == ENGINE_MSSQL:
+                menu.addSeparator()
+
+                action_attach = menu.addAction(
+                    icon("add", 16, "@icon_accent"),
+                    "Присоединить БД…",
+                )
+                action_attach.triggered.connect(
+                    lambda s=server: self.attachDatabaseRequested.emit(s)
+                )
+
+                action_restore = menu.addAction(
+                    icon("add", 16, "@icon_accent"),
+                    "Восстановить из бэкапа…",
+                )
+                action_restore.triggered.connect(
+                    lambda s=server: self.restoreDatabaseRequested.emit(s)
+                )
+
         if item is not None and self.is_db_item(item):
             server = self.server_name(item.parent())
             database = self.db_name(item)
@@ -512,6 +535,15 @@ class ServersTree(QTreeWidget):
                 )
                 action_drop.triggered.connect(
                     lambda s=server, d=database: self.dropDatabaseRequested.emit(s, d)
+                )
+
+            if engine == ENGINE_MSSQL:
+                action_detach = menu.addAction(
+                    icon("delete_outline", 16, "@icon_danger"),
+                    f"Отсоединить БД «{database}»",
+                )
+                action_detach.triggered.connect(
+                    lambda s=server, d=database: self.detachDatabaseRequested.emit(s, d)
                 )
 
         menu.exec(self.viewport().mapToGlobal(pos))

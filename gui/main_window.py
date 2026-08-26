@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QApplication,
     QTabBar,
+    QDialog,
 )
 
 from backend.repository import Repository
@@ -33,7 +34,7 @@ from backend.completion_worker import CompletionWorker
 from backend.query_worker import ALL_DATABASES, QueryWorker
 from backend.db_search_worker import DatabaseSearchWorker
 from backend.db_sizes_worker import DbSizesWorker
-from backend.drop_db_worker import DropDatabaseWorker
+from backend.db_operation_worker import DatabaseOperationWorker, DbOperation
 from common.sql_builder import sql_builder
 from common.sql_editing import build_update_sql
 from common.sql_security import is_write_statement
@@ -121,7 +122,7 @@ class MainWindow(QWidget):
         self._create_export_backend()
         self._create_search_backend()
         self._create_sizes_backend()
-        self._create_drop_db_backend()
+        self._create_db_op_backend()
         self._create_completion_backend()
 
         # Гарантия остановки потоков на ЛЮБОМ пути выхода: если процесс
@@ -314,18 +315,18 @@ class MainWindow(QWidget):
             self._sizes_error
         )
 
-    def _create_drop_db_backend(self):
+    def _create_db_op_backend(self):
 
-        self.drop_db_host = WorkerHost(DropDatabaseWorker, self)
-        self.drop_db_thread = self.drop_db_host.thread
-        self.drop_db_worker = self.drop_db_host.worker
+        self.db_op_host = WorkerHost(DatabaseOperationWorker, self)
+        self.db_op_thread = self.db_op_host.thread
+        self.db_op_worker = self.db_op_host.worker
 
-        self.drop_db_worker.finished.connect(
-            self._drop_db_finished
+        self.db_op_worker.finished.connect(
+            self._db_op_finished
         )
 
-        self.drop_db_worker.error.connect(
-            self._drop_db_error
+        self.db_op_worker.error.connect(
+            self._db_op_error
         )
 
     def _create_completion_backend(self):
@@ -558,7 +559,7 @@ class MainWindow(QWidget):
         self._load_servers()
 
     # ----------------------------------------------------------
-    # Drop Database
+    # DB Operations (Drop / Detach / Attach / Restore)
     # ----------------------------------------------------------
 
     def _drop_database(self, server: str, database: str) -> None:
@@ -584,7 +585,7 @@ class MainWindow(QWidget):
         typed, ok = QInputDialog.getText(
             self,
             "Подтвердите удаление",
-            f"Введите имя базы данных для подтверждения:",
+            "Введите имя базы данных для подтверждения:",
         )
         if not ok or typed.strip() != database:
             self.append_log(
@@ -599,26 +600,161 @@ class MainWindow(QWidget):
         )
         logger.action(f"Drop database: {server}.{database}")
 
-        self.drop_db_worker.set_request(server, database)
-        self.drop_db_thread.start()
-
-    def _drop_db_finished(self) -> None:
-        host = self.drop_db_worker._host
-        database = self.drop_db_worker._database
-        self.append_log(
-            "SUCCESS",
-            f"БД «{database}» на сервере «{host}» удалена.",
+        self.db_op_worker.set_request(
+            server, database, DbOperation.DROP,
         )
-        logger.action(f"Database dropped: {host}.{database}")
-        self.servers_tree.remove_database(host, database)
+        self.db_op_thread.start()
+
+    def _detach_database(self, server: str, database: str) -> None:
+        if not server or not database:
+            return
+
+        engine = registry.engine(server)
+        if engine != ENGINE_MSSQL:
+            return
+
+        answer = QMessageBox.warning(
+            self,
+            "Отсоединение базы данных",
+            f"Отсоединить БД «{database}» на сервере «{server}»?\n\n"
+            f"Файлы БД останутся на сервере.\n"
+            f"Для повторного использования потребуется присоединение.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        self.append_log(
+            "INFO",
+            f"Отсоединение БД «{database}» на сервере «{server}»…",
+        )
+        logger.action(f"Detach database: {server}.{database}")
+
+        self.db_op_worker.set_request(
+            server, database, DbOperation.DETACH,
+        )
+        self.db_op_thread.start()
+
+    def _attach_database(self, server: str) -> None:
+        if not server:
+            return
+
+        engine = registry.engine(server)
+        if engine != ENGINE_MSSQL:
+            return
+
+        from gui.attach_db_dialog import AttachDatabaseDialog
+
+        dlg = AttachDatabaseDialog(self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        database, mdf_path = dlg.data()
+
+        self.append_log(
+            "INFO",
+            f"Присоединение БД «{database}» на сервере «{server}»…",
+        )
+        logger.action(f"Attach database: {server}.{database} ({mdf_path})")
+
+        self.db_op_worker.set_request(
+            server,
+            database,
+            DbOperation.ATTACH,
+            file_path=mdf_path,
+        )
+        self.db_op_thread.start()
+
+    def _restore_database(self, server: str) -> None:
+        if not server:
+            return
+
+        engine = registry.engine(server)
+        if engine != ENGINE_MSSQL:
+            return
+
+        from gui.restore_db_dialog import RestoreDatabaseDialog
+
+        dlg = RestoreDatabaseDialog(self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        database, bak_path, replace = dlg.data()
+
+        self.append_log(
+            "INFO",
+            f"Восстановление БД «{database}» из «{bak_path}»…",
+        )
+        logger.action(
+            f"Restore database: {server}.{database} "
+            f"from {bak_path} (replace={replace})"
+        )
+
+        self.db_op_worker.set_request(
+            server,
+            database,
+            DbOperation.RESTORE,
+            file_path=bak_path,
+            replace=replace,
+        )
+        self.db_op_thread.start()
+
+    def _db_op_finished(self) -> None:
+        op = self.db_op_worker._operation
+        host = self.db_op_worker._host
+        database = self.db_op_worker._database
+
+        match op:
+            case DbOperation.DROP:
+                self.append_log(
+                    "SUCCESS",
+                    f"БД «{database}» на сервере «{host}» удалена.",
+                )
+                logger.action(f"Database dropped: {host}.{database}")
+                self.servers_tree.remove_database(host, database)
+
+            case DbOperation.DETACH:
+                self.append_log(
+                    "SUCCESS",
+                    f"БД «{database}» на сервере «{host}» отсоединена.",
+                )
+                logger.action(f"Database detached: {host}.{database}")
+                self.servers_tree.remove_database(host, database)
+
+            case DbOperation.ATTACH:
+                self.append_log(
+                    "SUCCESS",
+                    f"БД «{database}» на сервере «{host}» присоединена.",
+                )
+                logger.action(f"Database attached: {host}.{database}")
+
+            case DbOperation.RESTORE:
+                self.append_log(
+                    "SUCCESS",
+                    f"БД «{database}» на сервере «{host}» "
+                    f"восстановлена из резервной копии.",
+                )
+                logger.action(f"Database restored: {host}.{database}")
+
         self._sql_refresh_databases()
 
-    def _drop_db_error(self, message: str) -> None:
-        host = self.drop_db_worker._host
-        database = self.drop_db_worker._database
+    def _db_op_error(self, message: str) -> None:
+        host = self.db_op_worker._host
+        database = self.db_op_worker._database
+        op = self.db_op_worker._operation
+
+        op_names = {
+            DbOperation.DROP: "удаления",
+            DbOperation.DETACH: "отсоединения",
+            DbOperation.ATTACH: "присоединения",
+            DbOperation.RESTORE: "восстановления",
+        }
+        op_name = op_names.get(op, op)
+
         self.append_log(
             "ERROR",
-            f"Ошибка удаления БД «{database}» на «{host}»: {message}",
+            f"Ошибка {op_name} БД «{database}» на «{host}»: {message}",
         )
 
     # ----------------------------------------------------------
@@ -1145,6 +1281,18 @@ class MainWindow(QWidget):
 
         self.servers_tree.dropDatabaseRequested.connect(
             self._drop_database
+        )
+
+        self.servers_tree.detachDatabaseRequested.connect(
+            self._detach_database
+        )
+
+        self.servers_tree.attachDatabaseRequested.connect(
+            self._attach_database
+        )
+
+        self.servers_tree.restoreDatabaseRequested.connect(
+            self._restore_database
         )
 
         self.btn_log_clear.clicked.connect(
