@@ -108,13 +108,9 @@ class TestPoolReuse(unittest.TestCase):
 
         c1.alive = False
 
-        # Advance time beyond the 30s fresh threshold so ping is triggered
-        import time as _time
-        with patch("common.conn_pool.time.monotonic",
-                   return_value=_time.monotonic() + 31):
-            with self.client.connect("h1") as c2:
-                self.assertIsNot(c1, c2)
-                self.assertTrue(c1.closed)
+        with self.client.connect("h1") as c2:
+            self.assertIsNot(c1, c2)
+            self.assertTrue(c1.closed)
 
         self.assertEqual(self.factory.opens, 2)
 

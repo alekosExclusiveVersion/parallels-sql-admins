@@ -133,8 +133,7 @@ class ConnectionPool:
                     pc = self._pick_idle(kp, tid, now)
 
                 if pc is not None:
-                    fresh = (now - pc.last_used) < 30
-                    if fresh or self._alive is None or self._alive(pc.conn):
+                    if self._alive is None or self._alive(pc.conn):
                         return pc.conn
                     # Соединение сдохло в простое — убираем и пересоздаём
                     # (счётчик idle уже уменьшен в _pick_idle).
@@ -276,6 +275,7 @@ class ConnectionPool:
             pc.in_use = True
             pc.owner = tid
             pc.depth = 1
+            pc.last_used = now
             self._idle_count -= 1
             return pc
         return None

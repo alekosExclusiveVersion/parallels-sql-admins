@@ -100,6 +100,9 @@ class PgsqlClient:
                     dbname=database,
                     connect_timeout=self.cfg.connect_timeout,
                     row_factory=dict_row,
+                    keepalives_idle=30,
+                    keepalives_interval=10,
+                    keepalives_count=3,
                 )
                 break
 

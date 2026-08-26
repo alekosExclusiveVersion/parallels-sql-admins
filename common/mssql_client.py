@@ -63,7 +63,7 @@ class MSSQLClient:
         self._pool = ConnectionPool(
             cfg=lambda: self.cfg,
             open_conn=lambda host, db: self._open_connection(host, db),
-            alive_check=None,
+            alive_check=lambda conn: self._is_alive(conn),
             acquire_timeout=self.cfg.acquire_timeout,
             name="mssql",
         )
@@ -91,6 +91,7 @@ class MSSQLClient:
                     password=password,
                     database=database,
                     login_timeout=self.cfg.connect_timeout,
+                    timeout=60,
                     as_dict=True,
                     tds_version="7.0",
                 )
@@ -133,6 +134,14 @@ class MSSQLClient:
     def _pool_state(self) -> dict:
         """Снимок пула для тестов."""
         return self._pool.debug_state()
+
+    def _is_alive(self, conn) -> bool:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            return True
+        except Exception:
+            return False
 
     def _meta_set(self, conn, **kwargs: Any) -> None:
         with self._meta_lock:
