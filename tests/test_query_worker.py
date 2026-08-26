@@ -472,7 +472,7 @@ class FakeMetaClient:
     def __init__(self):
         self.calls = []
 
-    def edit_meta(self, host, database, table):
+    def edit_meta(self, host, database, table, conn=None):
         self.calls.append((host, database, table))
         return ["id"], ["id", "name"]
 
@@ -502,7 +502,7 @@ class TestQueryWorkerEditMeta(unittest.TestCase):
         )
         emitted = self._collect_meta(worker)
 
-        worker._emit_edit_meta("h1", "db1")
+        worker._emit_edit_meta(None, "h1", "db1")
 
         self.assertEqual(
             emitted, [("h1", "db1", "users", ["id"], ["id", "name"])]
@@ -518,7 +518,7 @@ class TestQueryWorkerEditMeta(unittest.TestCase):
         )
         emitted = self._collect_meta(worker)
 
-        worker._emit_edit_meta("h1", "db1")
+        worker._emit_edit_meta(None, "h1", "db1")
 
         self.assertEqual(emitted, [])
         self.assertEqual(self.client.calls, [])
@@ -528,7 +528,7 @@ class TestQueryWorkerEditMeta(unittest.TestCase):
         worker.set_request("h1", "db1", "SELECT * FROM users LIMIT 1000", 1000)
         emitted = self._collect_meta(worker)
 
-        worker._emit_edit_meta("h1", "db1")
+        worker._emit_edit_meta(None, "h1", "db1")
 
         self.assertEqual(emitted, [("h1", "db1", "users", ["id"], ["id", "name"])])
 
@@ -542,7 +542,7 @@ class TestQueryWorkerEditMeta(unittest.TestCase):
         )
         emitted = self._collect_meta(worker)
 
-        worker._emit_edit_meta_for_target("h1", "db1")
+        worker._emit_edit_meta_for_target(None, "h1", "db1")
 
         self.assertEqual(
             emitted, [("h1", "db1", "users", ["id"], ["id", "name"])]
@@ -558,7 +558,7 @@ class TestQueryWorkerEditMeta(unittest.TestCase):
         )
         emitted = self._collect_meta(worker)
 
-        worker._emit_edit_meta_for_target("h1", "db1")
+        worker._emit_edit_meta_for_target(None, "h1", "db1")
 
         self.assertEqual(emitted, [])
 

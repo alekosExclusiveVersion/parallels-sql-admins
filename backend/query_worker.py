@@ -295,37 +295,58 @@ class QueryWorker(QObject):
 
         self.query.emit(self._sql)
 
+        client = client_for(self._host)
+        started_at = time.perf_counter()
+
         try:
-            rows, columns, message = self._execute_sql(
-                self._host, self._database, self._statements, self._row_limit,
-            )
+            with client.connect(self._host, self._database) as conn:
+                self._register_active(
+                    self._host, client.connection_id(conn)
+                )
+                try:
+                    per_statement = []
+                    for statement in self._statements:
+                        if self._stop:
+                            break
+                        per_statement.append(
+                            self._execute_statement(
+                                conn, statement, self._row_limit,
+                            )
+                        )
+                finally:
+                    self._unregister_active()
+
+                rows, columns, message = self._combine_results(
+                    per_statement,
+                    time.perf_counter() - started_at,
+                )
+
+                if self._stop:
+                    self.stopped.emit(0, 1)
+                else:
+                    self.result.emit(rows, columns, message)
+                    self._emit_edit_meta(
+                        conn, self._host, self._database,
+                    )
         except Exception as ex:
             logger.exception(ex)
             if self._stop:
                 self.stopped.emit(0, 1)
             else:
                 self.error.emit(str(ex))
-            return
 
-        if self._stop:
-            self.stopped.emit(0, 1)
-        else:
-            self.result.emit(rows, columns, message)
-            self._emit_edit_meta(self._host, self._database)
-
-    def _emit_edit_meta(self, host: str, database: str | None) -> None:
-        """Подтягивает первичные ключи и колонки таблицы для редактирования.
-
-        Таблица берётся из _table_hint (просмотр таблицы из дерева серверов,
-        SQL с квалифицированным именем) либо парсится из простого SELECT.
-        """
+    def _emit_edit_meta(
+        self, conn, host: str, database: str | None,
+    ) -> None:
         if self._stop or not database:
             return
         try:
             table = self._table_hint or parse_select_table(self._sql)
             if not table:
                 return
-            pk, columns = client_for(host).edit_meta(host, database, table)
+            pk, columns = client_for(host).edit_meta(
+                host, database, table, conn=conn,
+            )
             self.edit_meta.emit(host, database, table, pk, columns)
         except Exception as ex:
             logger.warning(
@@ -333,13 +354,12 @@ class QueryWorker(QObject):
                 f"не загружены: {ex}"
             )
 
-    def _emit_edit_meta_for_target(self, host: str, database: str) -> None:
-        """Метаданные для мульти-запроса с единственной целью (таблица из
-        дерева серверов): результат рендерится через result_target, а
-        контекст редактирования — через edit_meta."""
+    def _emit_edit_meta_for_target(
+        self, conn, host: str, database: str,
+    ) -> None:
         if self._stop or len(self._targets) != 1:
             return
-        self._emit_edit_meta(host, database)
+        self._emit_edit_meta(conn, host, database)
 
     def _expand_multi_targets(self) -> list[tuple[int, str, str]]:
         """Разворачивает цели в список (idx, host, db); `*` — все БД."""
@@ -394,31 +414,46 @@ class QueryWorker(QObject):
 
             self.query.emit(self._sql)
 
+            client = client_for(host_name)
+
             try:
-                rows, columns, message = self._execute_sql(
-                    host_name, db_name, self._statements, self._row_limit,
-                )
+                with client.connect(host_name, db_name) as conn:
+                    self._register_active(
+                        host_name, client.connection_id(conn),
+                    )
+                    try:
+                        per_statement = []
+                        for statement in self._statements:
+                            if self._stop:
+                                break
+                            per_statement.append(
+                                self._execute_statement(
+                                    conn, statement, self._row_limit,
+                                )
+                            )
+                    finally:
+                        self._unregister_active()
+
+                    rows, columns, message = self._combine_results(
+                        per_statement, 0,
+                    )
+
+                    if self._stop:
+                        return
+
+                    with done_lock:
+                        done += 1
+
+                    self.result_target.emit(
+                        host_name, db_name, rows, columns, message,
+                    )
+                    self._emit_edit_meta_for_target(
+                        conn, host_name, db_name,
+                    )
             except Exception as ex:
                 logger.exception(ex)
                 if not self._stop:
                     self.error_target.emit(host_name, db_name, str(ex))
-                return
-
-            if self._stop:
-                return
-
-            with done_lock:
-                done += 1
-
-            self.result_target.emit(
-                host_name,
-                db_name,
-                rows,
-                columns,
-                message,
-            )
-
-            self._emit_edit_meta_for_target(host_name, db_name)
 
         executor = ThreadPoolExecutor(
             max_workers=workers,

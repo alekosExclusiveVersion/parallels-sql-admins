@@ -332,12 +332,15 @@ class MySQLClient:
             if db not in ignore
         )
 
-    def edit_meta(self, host: str, database: str, table: str):
+    def edit_meta(self, host: str, database: str, table: str, conn=None):
         """(первичные ключи, все колонки) таблицы для редактирования ячеек.
 
-        Оба запроса идут на одном соединении из пула.
+        Если conn передан — переиспользует его (без второго acquire из пула).
         """
-        with self.connect(host, database) as conn:
+        own = conn is None
+        if own:
+            conn = self.connect(host, database).__enter__()
+        try:
             pk = self.execute_on_connection(
                 conn,
                 "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE "
@@ -352,6 +355,9 @@ class MySQLClient:
                 "ORDER BY ORDINAL_POSITION",
                 (database, table),
             )
+        finally:
+            if own:
+                conn.__exit__(None, None, None)
 
         return (
             [row["COLUMN_NAME"] for row in pk],

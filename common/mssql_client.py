@@ -246,12 +246,15 @@ class MSSQLClient:
     def list_all_databases(self, host: str) -> list[str]:
         return self._filtered_databases(host, with_prefix=False)
 
-    def edit_meta(self, host: str, database: str, table: str):
+    def edit_meta(self, host: str, database: str, table: str, conn=None):
         """(первичные ключи, все колонки) таблицы для редактирования ячеек.
 
-        Оба запроса идут на одном соединении из пула (as_dict=True).
+        Если conn передан — переиспользует его (без второго acquire из пула).
         """
-        with self.connect(host, database) as conn:
+        own = conn is None
+        if own:
+            conn = self.connect(host, database).__enter__()
+        try:
             pk = self.execute_on_connection(
                 conn,
                 "SELECT COL_NAME(ic.object_id, ic.column_id) AS column_name "
@@ -268,6 +271,9 @@ class MSSQLClient:
                 "WHERE TABLE_NAME = %s ORDER BY ORDINAL_POSITION",
                 (table,),
             )
+        finally:
+            if own:
+                conn.__exit__(None, None, None)
 
         return (
             [row["column_name"] for row in pk],

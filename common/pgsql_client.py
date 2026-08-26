@@ -251,12 +251,15 @@ class PgsqlClient:
             if row.get("db")
         ]
 
-    def edit_meta(self, host: str, database: str, table: str):
+    def edit_meta(self, host: str, database: str, table: str, conn=None):
         """(первичные ключи, все колонки) таблицы для редактирования ячеек.
 
-        Оба запроса идут на одном соединении (dict_row).
+        Если conn передан — переиспользует его (без второго acquire из пула).
         """
-        with self.connect(host, database) as conn:
+        own = conn is None
+        if own:
+            conn = self.connect(host, database).__enter__()
+        try:
             pk = self.execute_on_connection(
                 conn,
                 "SELECT a.attname AS column_name "
@@ -273,6 +276,9 @@ class PgsqlClient:
                 "WHERE table_name = %s ORDER BY ordinal_position",
                 (table,),
             )
+        finally:
+            if own:
+                conn.__exit__(None, None, None)
 
         return (
             [row["column_name"] for row in pk],
