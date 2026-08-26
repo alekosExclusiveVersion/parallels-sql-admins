@@ -262,51 +262,49 @@ class TestSqlBusyFlag(unittest.TestCase):
         self.assertFalse(panel.is_busy())
         self.assertTrue(table._sorting_enabled)
 
-    def test_show_query_result_does_not_clear_busy(self):
-        """_show_query_result НЕ должен вызывать set_busy(False)."""
+    def test_show_query_result_clears_busy_immediately(self):
+        """_show_query_result вызывает set_busy(False) для мгновенной обратной связи."""
         panel, table, status_bar, worker, thread = self._make_main_window_stubs()
 
         _sql_busy = True
         panel.set_busy(True)
 
-        # Имитируем _show_query_result (уже без set_busy(False))
         def fake_show_query_result(rows, columns, message):
             host = panel.current_host()
             database = panel.current_database()
             table.fill_sql_result(host, database, rows, columns, message)
             status_bar.set_status(message)
+            panel.set_busy(False)
 
         fake_show_query_result([["a"]], ["col1"], "1 row(s)")
 
-        #Busy НЕ должен сброситься
-        self.assertTrue(_sql_busy)
-        self.assertTrue(panel.is_busy())
-        # Но результат должен отобразиться
+        # Busy сбрасывается сразу при получении результата
+        self.assertTrue(_sql_busy)  # Флаг _sql_busy НЕ сбрасывается
+        self.assertFalse(panel.is_busy())  # Но panel.set_busy(False) вызван
         self.assertIsNotNone(table._fill_args)
 
-    def test_sql_edit_finished_does_not_clear_busy(self):
-        """_sql_edit_finished НЕ должен вызывать set_busy(False)."""
+    def test_sql_edit_finished_clears_busy_immediately(self):
+        """_sql_edit_finished вызывает set_busy(False) для мгновенной обратной связи."""
         panel, table, status_bar, worker, thread = self._make_main_window_stubs()
 
         _sql_busy = True
         panel.set_busy(True)
         edit_pending = {"row": 0, "col": 0, "new_text": "x"}
 
-        # Имитируем _sql_edit_finished (уже без set_busy(False))
         def fake_sql_edit_finished(rows, columns, message):
             nonlocal edit_pending
             pending = edit_pending
             edit_pending = None
+            panel.set_busy(False)
             if pending is None:
                 return
-            # Обработка...
 
         fake_sql_edit_finished([], [], "1 row(s) affected")
 
-        # Busy НЕ должен сброситься из _sql_edit_finished
-        self.assertTrue(_sql_busy)
-        self.assertTrue(panel.is_busy())
-        self.assertIsNone(edit_pending)  # pending очистился
+        # Busy сбрасывается сразу
+        self.assertTrue(_sql_busy)  # Флаг _sql_busy НЕ сбрасывается
+        self.assertFalse(panel.is_busy())  # Но panel.set_busy(False) вызван
+        self.assertIsNone(edit_pending)
 
     def test_full_lifecycle_busy_transitions(self):
         """Полный цикл: busy=False → True (start) → False (finished)."""

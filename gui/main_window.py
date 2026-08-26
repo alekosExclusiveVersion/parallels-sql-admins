@@ -2052,6 +2052,7 @@ class MainWindow(QWidget):
         )
 
         self.status_bar.set_status(message)
+        self.panel.set_busy(False)
 
     def _sql_error(self, message):
 
@@ -2065,6 +2066,8 @@ class MainWindow(QWidget):
             "ERROR",
             f"SQL: {message}",
         )
+
+        self.panel.set_busy(False)
 
     # ----------------------------------------------------------
     # Редактирование ячеек Results
@@ -2273,6 +2276,8 @@ class MainWindow(QWidget):
 
         pending = self._sql_edit_pending
         self._sql_edit_pending = None
+
+        self.panel.set_busy(False)
 
         if pending is None:
             return
