@@ -32,3 +32,35 @@ Rules:
 - No comments unless asked
 - Russian UI strings, English code/identifiers
 - Follow existing patterns (signals/slots, WorkerHost, client_for dispatch)
+
+## Commits
+
+Format: `<type>(<scope>): <short summary>`
+
+```
+<type>(<scope>): <short summary — max 72 chars, imperative mood, no period>
+
+<blank line>
+
+<optional body — detailed description of what and why, wrapped at 80 chars>
+```
+
+### Type
+| Type | When |
+|------|------|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `refactor` | Code restructure without behavior change |
+| `chore` | Build, version bump, CI, config |
+| `test` | Adding or updating tests |
+| `docs` | Documentation only |
+
+### Scope
+Module or area affected: `mssql`, `pgsql`, `mysql`, `sql-console`, `servers-tree`, `tests`, `ci`, etc.
+
+### Rules
+- Summary is **imperative mood** ("add", not "added" / "adds")
+- Summary has **no period** at the end
+- Summary is **one line**, max 72 characters
+- Body explains **what** and **why**, not **how** (code shows how)
+- Reference issues: `Closes #123` in body
