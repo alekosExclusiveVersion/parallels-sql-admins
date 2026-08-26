@@ -52,6 +52,7 @@ from common.server_registry import (
     ENGINE_MSSQL,
     ENGINE_MYSQL,
     ENGINE_PGSQL,
+    ENGINE_SQLITE,
     ServerSpec,
     build_select_sql,
     registry,
@@ -86,6 +87,7 @@ _ENGINE_SORT_ORDER = {
     ENGINE_MSSQL: 0,
     ENGINE_MYSQL: 1,
     ENGINE_PGSQL: 2,
+    ENGINE_SQLITE: 3,
 }
 
 
@@ -567,7 +569,7 @@ class MainWindow(QWidget):
             return
 
         engine = registry.engine(server)
-        if engine not in (ENGINE_MSSQL, ENGINE_PGSQL):
+        if engine not in (ENGINE_MSSQL, ENGINE_PGSQL, ENGINE_SQLITE):
             return
 
         answer = QMessageBox.warning(

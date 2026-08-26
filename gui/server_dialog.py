@@ -32,6 +32,7 @@ from common.server_registry import (
     ENGINE_MSSQL,
     ENGINE_MYSQL,
     ENGINE_PGSQL,
+    ENGINE_SQLITE,
     ServerSpec,
     default_port,
 )
@@ -47,11 +48,14 @@ class _TestWorker(QObject):
         from common.mssql_client import mssql
         from common.mysql_client import mysql
         from common.pgsql_client import pgsql
+        from common.sqlite_client import sqlite
 
         if self._engine == ENGINE_MSSQL:
             client = mssql
         elif self._engine == ENGINE_PGSQL:
             client = pgsql
+        elif self._engine == ENGINE_SQLITE:
+            client = sqlite
         else:
             client = mysql
         ok, message = client.test_connection(
@@ -154,6 +158,7 @@ class ServerDialog(QDialog):
         self.cb_engine.addItem("MySQL", ENGINE_MYSQL)
         self.cb_engine.addItem("MSSQL", ENGINE_MSSQL)
         self.cb_engine.addItem("PostgreSQL", ENGINE_PGSQL)
+        self.cb_engine.addItem("SQLite", ENGINE_SQLITE)
         form.addRow("Движок:", self.cb_engine)
 
         self.sp_port = QSpinBox()
@@ -216,6 +221,15 @@ class ServerDialog(QDialog):
     def _engine_changed(self) -> None:
         engine = self.cb_engine.currentData()
         self.sp_port.setValue(default_port(engine))
+        is_sqlite = engine == ENGINE_SQLITE
+        self.sp_port.setVisible(not is_sqlite)
+        self.ed_user.setVisible(not is_sqlite)
+        self.ed_password.setVisible(not is_sqlite)
+        self.chk_show_password.setVisible(not is_sqlite)
+        if is_sqlite:
+            self.ed_host.setPlaceholderText("/path/to/database.db")
+        else:
+            self.ed_host.setPlaceholderText("")
 
     def _toggle_password(self, checked: bool) -> None:
         self.ed_password.setEchoMode(

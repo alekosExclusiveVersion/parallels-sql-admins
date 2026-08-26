@@ -27,6 +27,7 @@ from common.server_registry import (
     ENGINE_MSSQL,
     ENGINE_MYSQL,
     ENGINE_PGSQL,
+    ENGINE_SQLITE,
     registry,
 )
 
@@ -48,12 +49,14 @@ _ENGINE_ICON_COLORS = {
     ENGINE_MYSQL: "@mysql_brand",
     ENGINE_MSSQL: "@mssql_brand",
     ENGINE_PGSQL: "@pgsql_brand",
+    ENGINE_SQLITE: "@sqlite_brand",
 }
 
 _ENGINE_ICONS = {
     ENGINE_MYSQL: "dns",
     ENGINE_MSSQL: "server",
     ENGINE_PGSQL: "account_tree",
+    ENGINE_SQLITE: "sqlite",
 }
 
 
@@ -528,7 +531,7 @@ class ServersTree(QTreeWidget):
             database = self.db_name(item)
             engine = registry.engine(server)
 
-            if engine in (ENGINE_MSSQL, ENGINE_PGSQL):
+            if engine in (ENGINE_MSSQL, ENGINE_PGSQL, ENGINE_SQLITE):
                 action_drop = menu.addAction(
                     icon("delete_outline", 16, "@icon_danger"),
                     f"Удалить БД «{database}»",

@@ -53,6 +53,7 @@ from common.logger import logger
 ENGINE_MYSQL = "mysql"
 ENGINE_MSSQL = "mssql"
 ENGINE_PGSQL = "pgsql"
+ENGINE_SQLITE = "sqlite"
 
 _SYSTEM_DBS = frozenset(
     ("information_schema", "performance_schema", "mysql", "sys",
@@ -96,6 +97,8 @@ def default_port(engine: str) -> int:
         return config.mssql.port
     if engine == ENGINE_PGSQL:
         return config.pgsql.port
+    if engine == ENGINE_SQLITE:
+        return 0
     return config.mysql.port
 
 
@@ -276,7 +279,7 @@ class ServerRegistry:
                 if not spec.host:
                     continue
 
-                if spec.engine not in (ENGINE_MYSQL, ENGINE_MSSQL, ENGINE_PGSQL):
+                if spec.engine not in (ENGINE_MYSQL, ENGINE_MSSQL, ENGINE_PGSQL, ENGINE_SQLITE):
                     spec.engine = ENGINE_MYSQL
 
                 specs.append(spec)
@@ -347,7 +350,7 @@ class ServerRegistry:
             if not host:
                 continue
             engine = str(entry.get("engine") or ENGINE_MYSQL).lower()
-            if engine not in (ENGINE_MYSQL, ENGINE_MSSQL, ENGINE_PGSQL):
+            if engine not in (ENGINE_MYSQL, ENGINE_MSSQL, ENGINE_PGSQL, ENGINE_SQLITE):
                 engine = ENGINE_MYSQL
             specs.append(
                 ServerSpec(
@@ -629,6 +632,10 @@ class ServerRegistry:
             user = spec.user or config.pgsql.user
             password = spec.password or config.pgsql.password
             port = spec.port or config.pgsql.port
+        elif spec.engine == ENGINE_SQLITE:
+            user = ""
+            password = ""
+            port = 0
         else:
             user = spec.user or config.mysql.user
             password = spec.password or config.mysql.password
@@ -684,7 +691,7 @@ registry = ServerRegistry()
 
 
 def client_for(host_key: str):
-    """Возвращает клиент БД для сервера (MySQL, MSSQL или PostgreSQL)."""
+    """Возвращает клиент БД для сервера (MySQL, MSSQL, PostgreSQL или SQLite)."""
     from common.mssql_client import mssql
 
     if registry.engine(host_key) == ENGINE_MSSQL:
@@ -695,6 +702,11 @@ def client_for(host_key: str):
     if registry.engine(host_key) == ENGINE_PGSQL:
         return pgsql
 
+    from common.sqlite_client import sqlite
+
+    if registry.engine(host_key) == ENGINE_SQLITE:
+        return sqlite
+
     from common.mysql_client import mysql
 
     return mysql
@@ -703,7 +715,7 @@ def client_for(host_key: str):
 def quote_ident(engine: str, name: str) -> str:
     """Экранирование идентификатора для конкретной СУБД.
 
-    MySQL — обратные кавычки, MSSQL — квадратные скобки,
+    MySQL/SQLite — обратные кавычки, MSSQL — квадратные скобки,
     PostgreSQL — двойные кавычки.
     """
     if engine == ENGINE_MSSQL:
@@ -714,7 +726,7 @@ def quote_ident(engine: str, name: str) -> str:
 
 
 def build_select_sql(engine: str, database: str, table: str, limit: int = 1000) -> str:
-    """SELECT * с учётом синтаксиса СУБД (LIMIT для MySQL, TOP для MSSQL)."""
+    """SELECT * с учётом синтаксиса СУБД (LIMIT для MySQL/SQLite, TOP для MSSQL)."""
     if engine == ENGINE_MSSQL:
         parts = [quote_ident(engine, database)]
 

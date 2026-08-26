@@ -37,12 +37,13 @@ from common.server_registry import (
     ENGINE_MSSQL,
     ENGINE_MYSQL,
     ENGINE_PGSQL,
+    ENGINE_SQLITE,
     ServerSpec,
     default_port,
 )
 
 # Движки, поддерживаемые строками подключения (порядок важен для подсказок).
-SUPPORTED_ENGINES = (ENGINE_MYSQL, ENGINE_MSSQL, ENGINE_PGSQL)
+SUPPORTED_ENGINES = (ENGINE_MYSQL, ENGINE_MSSQL, ENGINE_PGSQL, ENGINE_SQLITE)
 
 # Алиасы схем в строках подключения → канонический движок.
 _ENGINE_ALIASES = {

@@ -58,6 +58,18 @@ class PgsqlConfig:
 
 
 @dataclass(frozen=True)
+class SqliteConfig:
+    connect_timeout: int
+    retry: int
+    pool_idle: int
+    idle_timeout: int
+    max_idle_connections: int
+    max_connections: int
+    max_per_key: int
+    acquire_timeout: int
+
+
+@dataclass(frozen=True)
 class ParallelConfig:
     workers: int
     database_workers: int
@@ -139,6 +151,7 @@ class Config:
     mysql: MySQLConfig
     mssql: MSSQLConfig
     pgsql: PgsqlConfig
+    sqlite: SqliteConfig
     parallel: ParallelConfig
     sizes: SizesConfig
     filter: FilterConfig
@@ -264,6 +277,34 @@ def load_config(config_file: str | Path | None = None) -> Config:
             ),
             acquire_timeout=p.getint(
                 "pgsql",
+                "acquire_timeout",
+                fallback=10,
+            ),
+        ),
+        sqlite=SqliteConfig(
+            connect_timeout=p.getint(
+                "sqlite", "connect_timeout", fallback=5
+            ),
+            retry=p.getint("sqlite", "retry", fallback=3),
+            pool_idle=p.getint("sqlite", "pool_idle", fallback=4),
+            idle_timeout=p.getint("sqlite", "idle_timeout", fallback=60),
+            max_idle_connections=p.getint(
+                "sqlite",
+                "max_idle_connections",
+                fallback=16,
+            ),
+            max_connections=p.getint(
+                "sqlite",
+                "max_connections",
+                fallback=100,
+            ),
+            max_per_key=p.getint(
+                "sqlite",
+                "max_per_key",
+                fallback=4,
+            ),
+            acquire_timeout=p.getint(
+                "sqlite",
                 "acquire_timeout",
                 fallback=10,
             ),
