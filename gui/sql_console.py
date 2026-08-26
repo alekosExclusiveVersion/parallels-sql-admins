@@ -81,6 +81,7 @@ class SqlEditor(QPlainTextEdit):
         self._line_number_area = LineNumberArea(self)
 
         self._completer = None
+        self._completion_prefix = ""
         self._completion_timer = QTimer(self)
         self._completion_timer.setSingleShot(True)
         self._completion_timer.setInterval(120)
@@ -114,9 +115,7 @@ class SqlEditor(QPlainTextEdit):
         Явно перемещает курсор в конец, чтобы работать корректно независимо
         от текущей позиции (например, сразу после setPlainText).
         """
-        if self._completer is None:
-            return ""
-        prefix = self._completer.completionPrefix()
+        prefix = self._completion_prefix
         if prefix:
             tc = self.textCursor()
             tc.movePosition(QTextCursor.End)
@@ -137,7 +136,7 @@ class SqlEditor(QPlainTextEdit):
             return
 
         tc = self.textCursor()
-        prefix = self._completer.completionPrefix()
+        prefix = self._completion_prefix
         if prefix:
             tc.movePosition(
                 QTextCursor.Left,
@@ -286,6 +285,7 @@ class SqlEditor(QPlainTextEdit):
         context = analyze_completion(
             self.toPlainText(), self.textCursor().position()
         )
+        self._completion_prefix = context.prefix
         self._completer.show_suggestions(context)
 
     def line_number_area_width(self) -> int:

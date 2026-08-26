@@ -141,7 +141,6 @@ class TestRemoveCompletionPrefix(unittest.TestCase):
 
     def _make_completer(self, prefix="", body_for=None):
         completer = MagicMock()
-        completer.completionPrefix.return_value = prefix
         completer.script_body_for.side_effect = (
             (lambda t: body_for.get(t)) if body_for else (lambda t: None)
         )
@@ -149,19 +148,22 @@ class TestRemoveCompletionPrefix(unittest.TestCase):
 
     def test_removes_prefix(self):
         self.editor.setPlainText("updat")
-        self.editor._completer = self._make_completer("updat")
+        self.editor._completer = self._make_completer()
+        self.editor._completion_prefix = "updat"
         removed = self.editor._remove_completion_prefix()
         self.assertEqual(self.editor.toPlainText(), "")
         self.assertEqual(removed, "updat")
 
     def test_returns_prefix(self):
         self.editor.setPlainText("sel")
-        self.editor._completer = self._make_completer("sel")
+        self.editor._completer = self._make_completer()
+        self.editor._completion_prefix = "sel"
         self.assertEqual(self.editor._remove_completion_prefix(), "sel")
 
     def test_no_prefix(self):
         self.editor.setPlainText("SELECT")
-        self.editor._completer = self._make_completer("")
+        self.editor._completer = self._make_completer()
+        self.editor._completion_prefix = ""
         self.assertEqual(self.editor._remove_completion_prefix(), "")
         self.assertEqual(self.editor.toPlainText(), "SELECT")
 
@@ -173,7 +175,8 @@ class TestRemoveCompletionPrefix(unittest.TestCase):
 
     def test_cursor_at_start(self):
         self.editor.setPlainText("updat")
-        self.editor._completer = self._make_completer("updat")
+        self.editor._completer = self._make_completer()
+        self.editor._completion_prefix = "updat"
         # курсор в начале (артефакт setPlainText)
         self.editor._remove_completion_prefix()
         self.assertEqual(self.editor.toPlainText(), "")
@@ -194,7 +197,6 @@ class TestInsertCompletionSignal(unittest.TestCase):
 
     def _make_completer(self, prefix, body_for):
         completer = MagicMock()
-        completer.completionPrefix.return_value = prefix
         completer.script_body_for.side_effect = lambda t: body_for.get(t)
         return completer
 
@@ -206,6 +208,7 @@ class TestInsertCompletionSignal(unittest.TestCase):
         self.editor._completer = self._make_completer(
             "upd", {"update_ticks": "UPDATE ticks SET t = NOW()"}
         )
+        self.editor._completion_prefix = "upd"
         self.editor._insert_completion("update_ticks")
         self.assertEqual(len(received), 1)
 
@@ -216,6 +219,7 @@ class TestInsertCompletionSignal(unittest.TestCase):
         )
         body = "UPDATE ticks SET t = NOW()"
         self.editor._completer = self._make_completer("upd", {"update_ticks": body})
+        self.editor._completion_prefix = "upd"
         self.editor._insert_completion("update_ticks")
         self.assertEqual(received[0][0], body)
 
@@ -227,6 +231,7 @@ class TestInsertCompletionSignal(unittest.TestCase):
         self.editor._completer = self._make_completer(
             "upd", {"update_ticks": "UPDATE ticks"}
         )
+        self.editor._completion_prefix = "upd"
         self.editor._insert_completion("update_ticks")
         self.assertEqual(received[0][1], "upd")
 
@@ -235,6 +240,7 @@ class TestInsertCompletionSignal(unittest.TestCase):
         self.editor._completer = self._make_completer(
             "upd", {"update_ticks": "UPDATE ticks"}
         )
+        self.editor._completion_prefix = "upd"
         self.editor._insert_completion("update_ticks")
         self.assertNotIn("upd", self.editor.toPlainText())
 
@@ -252,6 +258,7 @@ class TestInsertCompletionSignal(unittest.TestCase):
             lambda b, p: received.append((b, p))
         )
         self.editor._completer = self._make_completer("SEL", {})
+        self.editor._completion_prefix = "SEL"
         self.editor._insert_completion("SELECT")
         self.assertEqual(len(received), 0)
 
