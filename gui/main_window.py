@@ -2280,21 +2280,34 @@ class MainWindow(QWidget):
 
         self.panel.set_databases(names)
 
-        # Маркер рабочей БД в выпадающем списке
-        try:
-            host = self.panel.current_host()
-            if host and names:
-                update_times = mysql.database_update_times(host, names)
-                if update_times:
-                    self.panel.mark_working_database(update_times)
-        except Exception as ex:
-            logger.debug(f"Working DB marker skipped: {ex}")
-
         self.append_log(
             "SUCCESS",
             f"Загружено БД: {len(names)}.",
         )
-        self.panel.set_busy(False)
+
+        try:
+            host = self.panel.current_host()
+            if host and names:
+                threading.Thread(
+                    target=self._load_update_times,
+                    args=(host, names),
+                    daemon=True,
+                ).start()
+        except Exception as ex:
+            logger.debug(f"Working DB marker skipped: {ex}")
+
+    def _load_update_times(self, host, names):
+        try:
+            update_times = mysql.database_update_times(host, names)
+            if update_times:
+                QTimer.singleShot(
+                    0,
+                    lambda ut=update_times: self.panel.mark_working_database(
+                        ut
+                    ),
+                )
+        except Exception as ex:
+            logger.debug(f"Working DB marker skipped: {ex}")
 
     # ----------------------------------------------------------
     # Database search
