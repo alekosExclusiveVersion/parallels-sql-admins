@@ -206,6 +206,12 @@ class SqlEditor(QPlainTextEdit):
                 if key in (Qt.Key_Down, Qt.Key_Up):
                     return self._move_popup_cursor(key)
 
+                if (event.modifiers() & Qt.ControlModifier
+                        and key in (Qt.Key_Left, Qt.Key_Right,
+                                    Qt.Key_Up, Qt.Key_Down)):
+                    self.keyPressEvent(event)
+                    return True
+
         # Application-level ESC: перехватываем только когда фокус на
         # НАШЕМ редакторе — не на диалогах/меню/других виджетах.
         if (obj is self
@@ -274,7 +280,43 @@ class SqlEditor(QPlainTextEdit):
                 self.escapePressed.emit()
                 return
 
+        if event.modifiers() & Qt.ControlModifier:
+            key = event.key()
+            if key in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
+                self._handle_cmd_arrow(event)
+                return
+
         super().keyPressEvent(event)
+
+    def _handle_cmd_arrow(self, event) -> None:
+        key = event.key()
+        shift = bool(event.modifiers() & Qt.ShiftModifier)
+        cursor = self.textCursor()
+
+        if key == Qt.Key_Left:
+            move = QTextCursor.WordLeft if not shift else QTextCursor.WordLeft
+            cursor.movePosition(
+                move,
+                QTextCursor.KeepAnchor if shift else QTextCursor.MoveAnchor,
+            )
+        elif key == Qt.Key_Right:
+            move = QTextCursor.WordRight
+            cursor.movePosition(
+                move,
+                QTextCursor.KeepAnchor if shift else QTextCursor.MoveAnchor,
+            )
+        elif key == Qt.Key_Up:
+            cursor.movePosition(
+                QTextCursor.Up,
+                QTextCursor.KeepAnchor if shift else QTextCursor.MoveAnchor,
+            )
+        elif key == Qt.Key_Down:
+            cursor.movePosition(
+                QTextCursor.Down,
+                QTextCursor.KeepAnchor if shift else QTextCursor.MoveAnchor,
+            )
+
+        self.setTextCursor(cursor)
 
     def _schedule_completion(self) -> None:
         self._completion_timer.start()
