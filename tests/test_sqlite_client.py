@@ -278,6 +278,7 @@ class TestSQLiteErrors(unittest.TestCase):
             with self.assertRaises(Exception):
                 self.client.query(db_path, "NOT VALID SQL AT ALL")
         finally:
+            self.client.close_all()
             os.remove(db_path)
 
 
