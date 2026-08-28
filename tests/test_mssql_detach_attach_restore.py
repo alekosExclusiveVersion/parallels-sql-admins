@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QApplication
 from backend.db_operation_worker import DatabaseOperationWorker, DbOperation
 from common.mssql_client import MSSQLClient
 from common.server_registry import ENGINE_MSSQL, ENGINE_MYSQL, registry
+from gui.main_window import MainWindow
 from gui.servers_tree import ServersTree
 
 
@@ -57,6 +58,12 @@ class TestMSSQLDetachDatabase(unittest.TestCase):
         self.assertIn("SINGLE_USER", self.executions[0])
         self.assertIn("sp_detach_db", self.executions[1])
 
+    def test_detach_runs_in_master_context(self):
+        self.client.detach_database("srv", "mydb")
+
+        self.assertTrue(self.executions[0].lstrip().startswith("USE [master];"))
+        self.assertTrue(self.executions[1].lstrip().startswith("USE [master];"))
+
     def test_detach_escapes_brackets(self):
         self.client.detach_database("srv", "my]db")
 
@@ -84,6 +91,95 @@ class TestMSSQLDetachDatabase(unittest.TestCase):
 
 
 # ----------------------------------------------------------
+# MSSQLClient.drop_database / detach — контекст master
+# ----------------------------------------------------------
+
+class _StaleCtxConn:
+    """Фейковое соединение, у которого сессионный контекст уже
+    переключён на целевую БД (USE [db]) — эмуляция пула после
+    загрузки размеров таблиц."""
+
+    def __init__(self, owner):
+        self.owner = owner
+        self.closed = False
+
+    @property
+    def _current_db(self):
+        return self.owner.current_db
+
+    def cursor(self):
+        return self.owner.cur
+
+    def autocommit(self, val):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+class _CtxCursor:
+    def __init__(self, owner):
+        self.owner = owner
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def execute(self, sql, params=None):
+        self.owner.executions.append(sql)
+        if sql.startswith("USE ["):
+            self.owner.current_db = sql.split("USE [")[1].split("]")[0]
+        self.owner.result = []
+
+    description = None
+
+    def fetchall(self):
+        return self.owner.result
+
+
+class TestMSSQLDDLRunsInMasterContext(unittest.TestCase):
+    """Регрессия: пул переиспользует соединение с сессионным USE [db];
+    DDL drop/detach не должен исполняться внутри целевой БД — всегда
+    предваряется USE [master]."""
+
+    def setUp(self):
+        self.client = MSSQLClient(cfg=_FakeConfig())
+        self.client._open_connection = self._fake_open
+        self.executions: list[str] = []
+        self.current_db: str = "master"
+        self.cur = _CtxCursor(self)
+
+    def _fake_open(self, host, database=None):
+        return _StaleCtxConn(self)
+
+    def _prime_with_target_context(self, database: str):
+        with self.client.connect("srv", None) as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"USE [{database}]; SELECT 1")
+        self.assertEqual(self.current_db, database)
+
+    def test_drop_issued_in_master_after_stale_use(self):
+        self._prime_with_target_context("mydb")
+        self.client.drop_database("srv", "mydb")
+
+        for sql in self.executions[-2:]:
+            self.assertTrue(sql.lstrip().startswith("USE [master];"))
+            self.assertIn("DROP DATABASE [mydb]" if "DROP" in sql else "SINGLE_USER", sql)
+
+    def test_detach_issued_in_master_after_stale_use(self):
+        self._prime_with_target_context("mydb")
+        self.client.detach_database("srv", "mydb")
+
+        for sql in self.executions[-2:]:
+            self.assertTrue(sql.lstrip().startswith("USE [master];"))
+
+    def tearDown(self):
+        self.client.close_all()
+
+
+# ----------------------------------------------------------
 # MSSQLClient.attach_database
 # ----------------------------------------------------------
 
@@ -105,6 +201,7 @@ class TestMSSQLAttachDatabase(unittest.TestCase):
         self.client.attach_database("srv", "mydb", r"C:\data\mydb.mdf")
 
         self.assertEqual(len(self.executions), 1)
+        self.assertTrue(self.executions[0].lstrip().startswith("USE [master];"))
         self.assertIn("CREATE DATABASE [mydb]", self.executions[0])
         self.assertIn("FOR ATTACH", self.executions[0])
 
@@ -156,6 +253,7 @@ class TestMSSQLRestoreDatabase(unittest.TestCase):
         )
 
         self.assertEqual(len(self.executions), 1)
+        self.assertTrue(self.executions[0].lstrip().startswith("USE [master];"))
         self.assertIn("RESTORE DATABASE [mydb]", self.executions[0])
         self.assertIn("FROM DISK", self.executions[0])
         self.assertIn("REPLACE", self.executions[0])
@@ -393,6 +491,39 @@ class TestContextMenuSignals(unittest.TestCase):
         engine = registry.engine("h2")
         self.assertEqual(engine, ENGINE_MYSQL)
         self.assertNotEqual(engine, ENGINE_MSSQL)
+
+
+# ----------------------------------------------------------
+# MainWindow._db_op_error — модальное окно ошибки
+# ----------------------------------------------------------
+
+class TestDbOpErrorModal(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls._app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        window = MainWindow.__new__(MainWindow)
+        window.db_op_worker = MagicMock()
+        window.db_op_worker._host = "h1"
+        window.db_op_worker._database = "mydb"
+        window.db_op_worker._operation = DbOperation.DROP
+        window.append_log = MagicMock()
+        self.window = window
+
+    @patch("gui.main_window.QMessageBox.critical")
+    def test_shows_modal_on_error(self, mock_critical):
+        MainWindow._db_op_error(self.window, "boom")
+
+        self.window.append_log.assert_called_once()
+        args = mock_critical.call_args.args
+        self.assertIs(args[0], self.window)
+        self.assertIn("удаления", args[1])
+        combined = args[2]
+        self.assertIn("«mydb»", combined)
+        self.assertIn("«h1»", combined)
+        self.assertIn("boom", combined)
 
 
 if __name__ == "__main__":

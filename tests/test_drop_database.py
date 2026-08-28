@@ -119,6 +119,12 @@ class TestMSSQLDropDatabase(unittest.TestCase):
         self.assertIn("SINGLE_USER", self.executions[0])
         self.assertIn("DROP DATABASE [mydb]", self.executions[1])
 
+    def test_drop_runs_in_master_context(self):
+        self.client.drop_database("srv", "mydb")
+
+        self.assertTrue(self.executions[0].lstrip().startswith("USE [master];"))
+        self.assertTrue(self.executions[1].lstrip().startswith("USE [master];"))
+
     def test_drop_escapes_brackets(self):
         self.client.drop_database("srv", "my]db")
 

@@ -392,24 +392,41 @@ GROUP BY database_id
     # Удаление БД
     # ----------------------------------------------------------
 
-    def drop_database(self, host: str, database: str) -> None:
-        """Переводит БД в SINGLE_USER (отбивает все соединения) и удаляет.
+    def _set_single_user(self, host: str, database: str) -> None:
+        """Переводит БД в SINGLE_USER WITH ROLLBACK IMMEDIATE.
 
-        Использует ``SET SINGLE_USER WITH ROLLBACK IMMEDIATE`` —
-        встроенный MSSQL-механизм вместо ручного KILL.  Каждый шаг
-        идёт отдельным ``query()``, чтобы пул выдал свежее соединение.
+        Команда исполняется в контексте master (USE [master]) — пул
+        переиспользует соединение, у которого сессионный контекст мог
+        остаться на целевой БД (USE [db] от загрузки размеров таблиц),
+        из-за чего ALTER DATABASE внутри самой БД отклоняется SQL Server.
         """
         escaped = _escape_bracket(database)
 
         logger.info(f"{host}: SET SINGLE_USER [{escaped}]")
         self.query(
             host,
+            f"USE [master]; "
             f"ALTER DATABASE [{escaped}] "
             f"SET SINGLE_USER WITH ROLLBACK IMMEDIATE",
         )
 
+    def drop_database(self, host: str, database: str) -> None:
+        """Переводит БД в SINGLE_USER (отбивает все соединения) и удаляет.
+
+        Использует ``SET SINGLE_USER WITH ROLLBACK IMMEDIATE`` —
+        встроенный MSSQL-механизм вместо ручного KILL.  Каждый шаг
+        идёт отдельным ``query()``, чтобы пул выдал свежее соединение.
+        DDL исполняется из контекста master (см. ``_set_single_user``).
+        """
+        escaped = _escape_bracket(database)
+
+        self._set_single_user(host, database)
+
         logger.info(f"{host}: DROP DATABASE [{escaped}]")
-        self.query(host, f"DROP DATABASE [{escaped}]")
+        self.query(
+            host,
+            f"USE [master]; DROP DATABASE [{escaped}]",
+        )
 
     # ----------------------------------------------------------
     # Отсоединение / Присоединение / Восстановление БД
@@ -423,16 +440,12 @@ GROUP BY database_id
         """
         escaped = _escape_bracket(database)
 
-        logger.info(f"{host}: SET SINGLE_USER [{escaped}]")
-        self.query(
-            host,
-            f"ALTER DATABASE [{escaped}] "
-            f"SET SINGLE_USER WITH ROLLBACK IMMEDIATE",
-        )
+        self._set_single_user(host, database)
 
         logger.info(f"{host}: sp_detach_db [{escaped}]")
         self.query(
             host,
+            f"USE [master]; "
             f"EXEC sp_detach_db N'{escaped}', 'true'",
         )
 
@@ -469,6 +482,7 @@ GROUP BY database_id
         logger.info(f"{host}: CREATE DATABASE [{escaped}] FOR ATTACH")
         self.query(
             host,
+            f"USE [master]; "
             f"CREATE DATABASE [{escaped}] "
             f"ON (FILENAME = N'{mdf_path}') "
             f"FOR ATTACH",
@@ -498,6 +512,7 @@ GROUP BY database_id
         logger.info(f"{host}: RESTORE DATABASE [{escaped}] FROM DISK = N'{bak_path}'")
         self.query(
             host,
+            f"USE [master]; "
             f"RESTORE DATABASE [{escaped}] "
             f"FROM DISK = N'{bak_path}' "
             f"WITH {with_replace}".rstrip(),

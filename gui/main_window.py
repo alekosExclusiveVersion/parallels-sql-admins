@@ -789,6 +789,13 @@ class MainWindow(QWidget):
         )
         logger.action(f"ERROR {op_name}: {host}.{database} — {message}")
 
+        QMessageBox.critical(
+            self,
+            f"Ошибка {op_name} базы данных",
+            f"Не удалось выполнить {op_name} БД «{database}» "
+            f"на сервере «{host}»:\n\n{message}",
+        )
+
     # ----------------------------------------------------------
     # Refresh
     # ----------------------------------------------------------
