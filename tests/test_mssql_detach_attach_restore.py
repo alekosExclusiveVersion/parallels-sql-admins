@@ -439,6 +439,34 @@ class TestDatabaseOperationWorker(unittest.TestCase):
         self.assertFalse(self.succeeded)
         self.assertIn("Unknown operation", self.error_msg)
 
+    @patch("backend.db_operation_worker.client_for")
+    def test_base_exception_still_emits_finished(self, mock_client_for):
+        """Регрессия: любой сбой, включая BaseException (не только
+        Exception), должен превращаться в error-сигнал и не должен
+        заклинивать поток — finished обязан эмититься в finally."""
+        mock_client = MagicMock()
+        mock_client.drop_database.side_effect = SystemExit("hard crash")
+        mock_client_for.return_value = mock_client
+
+        self.worker.set_request("h1", "db1", DbOperation.DROP)
+        self.worker.run()
+
+        self.assertTrue(self.finished)
+        self.assertFalse(self.succeeded)
+        self.assertIn("hard crash", self.error_msg)
+
+    @patch("backend.db_operation_worker.client_for")
+    def test_success_also_emits_finished(self, mock_client_for):
+        mock_client = MagicMock()
+        mock_client_for.return_value = mock_client
+
+        self.worker.set_request("h1", "db1", DbOperation.DROP)
+        self.worker.run()
+
+        self.assertTrue(self.finished)
+        self.assertTrue(self.succeeded)
+        self.assertIsNone(self.error_msg)
+
 
 # ----------------------------------------------------------
 # Context menu signals

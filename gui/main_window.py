@@ -580,6 +580,10 @@ class MainWindow(QWidget):
 
         if self.db_op_thread.isRunning():
             self.status_bar.set_status("Операция уже выполняется…")
+            logger.warning(
+                f"Drop database {server}.{database} skipped: "
+                "db_op thread busy"
+            )
             return
 
         answer = QMessageBox.warning(
@@ -627,6 +631,10 @@ class MainWindow(QWidget):
 
         if self.db_op_thread.isRunning():
             self.status_bar.set_status("Операция уже выполняется…")
+            logger.warning(
+                f"Detach database {server}.{database} skipped: "
+                "db_op thread busy"
+            )
             return
 
         answer = QMessageBox.warning(
@@ -662,6 +670,9 @@ class MainWindow(QWidget):
 
         if self.db_op_thread.isRunning():
             self.status_bar.set_status("Операция уже выполняется…")
+            logger.warning(
+                f"Attach database {server} skipped: db_op thread busy"
+            )
             return
 
         from gui.attach_db_dialog import AttachDatabaseDialog
@@ -696,6 +707,9 @@ class MainWindow(QWidget):
 
         if self.db_op_thread.isRunning():
             self.status_bar.set_status("Операция уже выполняется…")
+            logger.warning(
+                f"Restore database {server} skipped: db_op thread busy"
+            )
             return
 
         from gui.restore_db_dialog import RestoreDatabaseDialog

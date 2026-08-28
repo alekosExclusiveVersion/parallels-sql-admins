@@ -54,6 +54,10 @@ class DatabaseOperationWorker(QObject):
 
     def run(self) -> None:
         ok = False
+        logger.info(
+            f"DB op start: {self._host}.{self._database} "
+            f"op={self._operation}"
+        )
         try:
             client = client_for(self._host)
 
@@ -86,10 +90,14 @@ class DatabaseOperationWorker(QObject):
 
             ok = True
 
-        except Exception as ex:
+        except BaseException as ex:
             logger.exception(ex)
             self.error.emit(str(ex))
         finally:
             if ok:
                 self.success.emit()
+            logger.info(
+                f"DB op done: {self._host}.{self._database} "
+                f"op={self._operation} ok={ok}"
+            )
             self.finished.emit()
