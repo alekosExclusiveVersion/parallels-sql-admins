@@ -243,6 +243,28 @@ class TestServersTree(unittest.TestCase):
         self.assertEqual(srv.child(0).childCount(), 1)
         self.assertEqual(srv.child(0).child(0).text(0), "…")
 
+    def test_db_node_carries_its_server_key(self):
+        """Регрессия: узел БД хранит host-ключ сервера в _SERVER_ROLE,
+        поэтому контекстное меню (drop/detach) разрешает сервер из самого
+        узла и не зависит от item.parent()."""
+        tree = ServersTree()
+        tree.set_servers([("Name", "h1:1433", "mssql")])
+        srv = tree.topLevelItem(0)
+
+        tree.apply_databases("h1:1433", ["ar_a"])
+
+        db = srv.child(0)
+        self.assertEqual(tree.db_name(db), "ar_a")
+        # узел БД несёт host-ключ сервера на самом себе
+        self.assertEqual(ServersTree.db_server_name(db), "h1:1433")
+        # даже если родитель по какой-то причине не несёт host (баг дерева),
+        # контекстное меню берёт ключ с узла БД и не теряет сервер
+        srv.setData(0, Qt.UserRole, "")
+        self.assertEqual(
+            ServersTree.db_server_name(db) or ServersTree.server_name(db.parent()),
+            "h1:1433",
+        )
+
     def test_db_expand_uses_tables_cache(self):
         tree = ServersTree()
         tree.set_servers(["srv1"])

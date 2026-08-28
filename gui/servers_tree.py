@@ -43,6 +43,11 @@ _DISPLAY_ROLE = Qt.UserRole + 1
 # Движок сервера ("mysql"/"mssql") — для выбора фирменной иконки.
 _ENGINE_ROLE = Qt.UserRole + 2
 
+# Роль, в которой на узле БД хранится host-ключ родительского сервера.
+# Хранится на самом БД-узле, чтобы контекстное меню (drop/detach) не
+# зависело от разрешения item.parent() — родитель может не нести ключ.
+_SERVER_ROLE = Qt.UserRole + 3
+
 # Фирменные цвета движков — токены темы (styles.py), чтобы иконка
 # оставалась читаемой и на светлой, и на тёмной теме.
 _ENGINE_ICON_COLORS = {
@@ -142,6 +147,19 @@ class ServersTree(QTreeWidget):
         if item is None:
             return ""
         return item.data(0, Qt.UserRole) or item.text(0)
+
+    @staticmethod
+    def db_server_name(item: QTreeWidgetItem | None) -> str:
+        """Host-ключ сервера для узла БД.
+
+        Берётся из _SERVER_ROLE, проставленного при создании узла БД —
+        не зависит от разрешения item.parent(), чтобы контекстное меню
+        (drop/detach) всегда получало корректный host даже если родитель
+        узел его не несёт.
+        """
+        if item is None:
+            return ""
+        return item.data(0, _SERVER_ROLE) or ""
 
     @staticmethod
     def is_server_item(item: QTreeWidgetItem | None) -> bool:
@@ -283,6 +301,7 @@ class ServersTree(QTreeWidget):
             for db_name in names:
                 db_item = QTreeWidgetItem(server_item, [db_name])
                 db_item.setData(0, Qt.UserRole, db_name)
+                db_item.setData(0, _SERVER_ROLE, server)
                 db_item.setIcon(0, icon("storage", 22, "@icon_secondary"))
                 QTreeWidgetItem(db_item, [_PLACEHOLDER])
             server_item.sortChildren(0, Qt.AscendingOrder)
@@ -341,6 +360,7 @@ class ServersTree(QTreeWidget):
                         [f"{db_name}  ({self.format_size(db_size)})"],
                     )
                     db_item.setData(0, Qt.UserRole, db_name)
+                    db_item.setData(0, _SERVER_ROLE, server)
                     db_item.setIcon(0, icon("storage", 22, "@icon_secondary"))
                     QTreeWidgetItem(db_item, [_PLACEHOLDER])
                 server_item.sortChildren(0, Qt.AscendingOrder)
@@ -527,7 +547,10 @@ class ServersTree(QTreeWidget):
                 )
 
         if item is not None and self.is_db_item(item):
-            server = self.server_name(item.parent())
+            server = (
+                self.db_server_name(item)
+                or self.server_name(item.parent())
+            )
             database = self.db_name(item)
             engine = registry.engine(server)
 
