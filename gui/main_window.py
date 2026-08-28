@@ -329,10 +329,6 @@ class MainWindow(QWidget):
         self.db_op_thread = self.db_op_host.thread
         self.db_op_worker = self.db_op_host.worker
 
-        self.db_op_worker.finished.connect(
-            self._db_op_finished
-        )
-
         self.db_op_worker.success.connect(
             self._db_op_success
         )
@@ -727,9 +723,6 @@ class MainWindow(QWidget):
             replace=replace,
         )
         self.db_op_thread.start()
-
-    def _db_op_finished(self) -> None:
-        pass
 
     def _db_op_success(self) -> None:
         op = self.db_op_worker._operation
