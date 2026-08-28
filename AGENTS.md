@@ -59,6 +59,25 @@ portable zip and Linux tar.gz, then attaches them to the GitHub Release.
 Never push a tag without a corresponding version bump commit — the tag and
 `APP_VERSION` must always match.
 
+## GitHub Actions (CI)
+
+Keep actions in `.github/workflows/build.yml` on **current major versions**
+(targeting Node 24, not deprecated Node 20). GitHub forces Node-20 actions to
+run on Node 24 and warns; relying on that shim risks silent CI breakage.
+
+Current baseline (as of 4.29.x):
+
+| Action | Version |
+|--------|---------|
+| `actions/checkout` | `@v7` |
+| `actions/setup-python` | `@v7` |
+| `actions/upload-artifact` | `@v7` |
+| `softprops/action-gh-release` | `@v3` |
+
+Before bumping an action, verify its latest release (tag + Node runtime) via the
+GitHub API (`.../releases/latest`) and confirm a CI run passes after the change.
+Treat deprecation annotations in workflow runs as a prompt to update.
+
 ## Commits
 
 Format: `<type>(<scope>): <short summary>`
