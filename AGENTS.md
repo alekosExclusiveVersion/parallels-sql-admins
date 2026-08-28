@@ -42,6 +42,23 @@ Rules:
 - Russian UI strings, English code/identifiers
 - Follow existing patterns (signals/slots, WorkerHost, client_for dispatch)
 
+## Release
+
+When `APP_VERSION` is bumped (the `chore: bump version to X.Y.Z` commit), a git
+tag **must** be created and pushed so CI publishes a GitHub Release with build
+artifacts:
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+CI (`.github/workflows/build.yml`) automatically builds Windows installer +
+portable zip and Linux tar.gz, then attaches them to the GitHub Release.
+
+Never push a tag without a corresponding version bump commit — the tag and
+`APP_VERSION` must always match.
+
 ## Commits
 
 Format: `<type>(<scope>): <short summary>`
