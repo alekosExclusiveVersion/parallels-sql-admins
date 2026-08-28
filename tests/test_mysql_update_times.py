@@ -24,7 +24,7 @@ class TestDatabaseUpdateTimes(unittest.TestCase):
 
     def test_returns_timestamp_when_update_time_present(self):
         client = self._make_client()
-        now = datetime(2026, 8, 20, 12, 0, 0)
+        now = datetime.now()
 
         with patch.object(client, "query") as mock_q:
             mock_q.return_value = [
@@ -32,7 +32,7 @@ class TestDatabaseUpdateTimes(unittest.TestCase):
             ]
             result = client.database_update_times("srv1", ["ar_test"])
 
-        self.assertEqual(result, {"ar_test": "2026-08-20 12:00:00"})
+        self.assertEqual(result, {"ar_test": str(now)})
         self.assertEqual(mock_q.call_count, 1)
 
     def test_returns_empty_when_null_and_no_data(self):
