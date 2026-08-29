@@ -18,6 +18,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication
 
 import backend.db_sizes_worker as dw
@@ -264,6 +265,41 @@ class TestServersTree(unittest.TestCase):
             ServersTree.db_server_name(db) or ServersTree.server_name(db.parent()),
             "h1:1433",
         )
+
+    def test_menu_trigger_guard_against_checked(self):
+        """Регрессия: QAction.triggered(bool checked) подставляет False в
+        первый параметр слота и перекрывал default-арг лямбды, из-за чего
+        drop/detach/attach/restore получали пустой server. _menu_trigger
+        игнорирует checked и вызывает handler с прежними данными."""
+        tree = ServersTree()
+        received = []
+        tree.detachDatabaseRequested.connect(
+            lambda s, d: received.append((s, d))
+        )
+
+        action = QAction("x")
+        action.triggered.connect(
+            tree._menu_trigger(lambda: tree.detachDatabaseRequested.emit("h1", "db"))
+        )
+        action.trigger()
+
+        self.assertEqual(received, [("h1", "db")])
+
+    def test_menu_trigger_guards_attach_restore_server(self):
+        """Для attach/restore server передаётся без искажения булевым
+        checked из QAction.triggered."""
+        tree = ServersTree()
+        received = []
+        tree.attachDatabaseRequested.connect(received.append)
+        tree.restoreDatabaseRequested.connect(received.append)
+
+        action = QAction("x")
+        action.triggered.connect(
+            tree._menu_trigger(lambda: tree.attachDatabaseRequested.emit("h1"))
+        )
+        action.trigger()
+
+        self.assertEqual(received, ["h1"])
 
     def test_db_expand_uses_tables_cache(self):
         tree = ServersTree()

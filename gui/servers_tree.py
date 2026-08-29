@@ -516,7 +516,7 @@ class ServersTree(QTreeWidget):
                 f"Изменить «{label}»",
             )
             action_edit.triggered.connect(
-                lambda: self.editServerRequested.emit(server)
+                self._menu_trigger(lambda: self.editServerRequested.emit(server))
             )
 
             action_remove = menu.addAction(
@@ -524,7 +524,7 @@ class ServersTree(QTreeWidget):
                 f"Удалить «{label}»",
             )
             action_remove.triggered.connect(
-                lambda: self.removeServerRequested.emit(server)
+                self._menu_trigger(lambda: self.removeServerRequested.emit(server))
             )
 
             if engine == ENGINE_MSSQL:
@@ -535,7 +535,7 @@ class ServersTree(QTreeWidget):
                     "Присоединить БД…",
                 )
                 action_attach.triggered.connect(
-                    lambda s=server: self.attachDatabaseRequested.emit(s)
+                    self._menu_trigger(lambda: self.attachDatabaseRequested.emit(server))
                 )
 
                 action_restore = menu.addAction(
@@ -543,7 +543,7 @@ class ServersTree(QTreeWidget):
                     "Восстановить из бэкапа…",
                 )
                 action_restore.triggered.connect(
-                    lambda s=server: self.restoreDatabaseRequested.emit(s)
+                    self._menu_trigger(lambda: self.restoreDatabaseRequested.emit(server))
                 )
 
         if item is not None and self.is_db_item(item):
@@ -560,7 +560,9 @@ class ServersTree(QTreeWidget):
                     f"Удалить БД «{database}»",
                 )
                 action_drop.triggered.connect(
-                    lambda s=server, d=database: self.dropDatabaseRequested.emit(s, d)
+                    self._menu_trigger(
+                        lambda: self.dropDatabaseRequested.emit(server, database)
+                    )
                 )
 
             if engine == ENGINE_MSSQL:
@@ -569,10 +571,23 @@ class ServersTree(QTreeWidget):
                     f"Отсоединить БД «{database}»",
                 )
                 action_detach.triggered.connect(
-                    lambda s=server, d=database: self.detachDatabaseRequested.emit(s, d)
+                    self._menu_trigger(
+                        lambda: self.detachDatabaseRequested.emit(server, database)
+                    )
                 )
 
         menu.exec(self.viewport().mapToGlobal(pos))
+
+    @staticmethod
+    def _menu_trigger(handler):
+        """Слот для QAction.triggered, игнорирующий булев `checked`.
+
+        QAction.triggered(bool checked) подставляет False позиционно в
+        первый параметр слота, перекрывая его default-арг — из-за этого
+        лямбды вида lambda s=server теряли данные (s=False). Обёртка
+        принимает checked первым параметром и вызывает handler без него.
+        """
+        return lambda checked=False: handler()
 
     def _double_click(self, item: QTreeWidgetItem) -> None:
         """Двойной клик: на таблице — SELECT *, на сервере/БД — раскрытие."""
