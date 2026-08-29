@@ -40,6 +40,7 @@ from common.sql_builder import DEFAULT_SCAN_TEMPLATE
 from common.paths import app_data_dir
 from gui.icons import icon
 from gui.widgets.help_icon import HelpIcon
+from gui.widgets.copyable_alert import CopyableMessageBox
 
 DATA_DIR = app_data_dir()
 SCRIPTS_FILE = DATA_DIR / "scripts.json"
@@ -434,7 +435,7 @@ class ScriptsLibrary(QWidget):
         new_name = new_name.strip()
         names = {s["name"] for s in self._scripts}
         if new_name in names:
-            QMessageBox.warning(
+            CopyableMessageBox.warning(
                 self, "Ошибка",
                 f"Скрипт «{new_name}» уже существует.",
             )
@@ -463,7 +464,7 @@ class ScriptsLibrary(QWidget):
         if self._current < 0:
             return
         name = self._scripts[self._current]["name"]
-        answer = QMessageBox.question(
+        answer = CopyableMessageBox.question(
             self,
             "Удалить скрипт",
             f"Удалить скрипт «{name}»?",
@@ -492,7 +493,7 @@ class ScriptsLibrary(QWidget):
 
     def _confirm_save_if_dirty(self) -> bool:
         """Спрашивает про несохранённые изменения. True — можно уходить."""
-        answer = QMessageBox.question(
+        answer = CopyableMessageBox.question(
             self,
             "Несохранённые изменения",
             f"Сохранить изменения скрипта "

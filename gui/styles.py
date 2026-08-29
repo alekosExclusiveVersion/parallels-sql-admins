@@ -75,6 +75,7 @@ LIGHT = {
     "icon_secondary": "#6d28d9",
     "icon_success": "#15803d",
     "icon_danger": "#dc2626",
+    "icon_warning": "#d97706",
     # Фирменные цвета движков БД (официальные, на светлом фоне).
     "mysql_brand": "#2563eb",
     "mssql_brand": "#b91c1c",
@@ -150,6 +151,7 @@ DARK = {
     "icon_secondary": "#c084fc",
     "icon_success": "#4ade80",
     "icon_danger": "#f87171",
+    "icon_warning": "#fbbf24",
     # Фирменные цвета движков БД (светлее официальных, чтобы были
     # читаемы на чисто-чёрном фоне тёмной темы).
     "mysql_brand": "#60a5fa",

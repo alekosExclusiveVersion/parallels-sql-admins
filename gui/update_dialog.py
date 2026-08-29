@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QLabel,
-    QMessageBox,
     QProgressDialog,
     QVBoxLayout,
 )
@@ -28,6 +27,7 @@ from common import updater
 from common.config import config
 from common.logger import logger
 from common.version import APP_VERSION
+from gui.widgets.copyable_alert import CopyableMessageBox
 
 _RC_LATER = 0
 _RC_UPDATE = 1
@@ -183,7 +183,7 @@ def _download_and_install(parent, version: str, url: str) -> None:
     def on_failed(message: str) -> None:
         progress.close()
         logger.warning(f"Обновление не удалось: {message}")
-        QMessageBox.warning(
+        CopyableMessageBox.warning(
             parent,
             "Обновление",
             f"Не удалось обновить приложение:\n{message}",

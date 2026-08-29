@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QLabel,
-    QMessageBox,
     QRadioButton,
     QVBoxLayout,
 )
@@ -32,6 +31,7 @@ from common.key_store import (
 from common.server_registry import registry
 from gui import styles as theme_styles
 from gui.master_password_dialog import MasterPasswordDialog
+from gui.widgets.copyable_alert import CopyableMessageBox
 
 
 class SettingsDialog(QDialog):
@@ -134,11 +134,11 @@ class SettingsDialog(QDialog):
             if not self._rekey(kind):
                 return
         except (VaultError, WrongMasterPasswordError) as ex:
-            QMessageBox.warning(self, "Конфиденциальность", str(ex))
+            CopyableMessageBox.warning(self, "Конфиденциальность", str(ex))
             return
 
         theme_styles.save_security_backend(kind)
-        QMessageBox.information(
+        CopyableMessageBox.information(
             self,
             "Конфиденциальность",
             "Режим защиты ключа изменён. Данные перешифрованы.",
@@ -186,7 +186,7 @@ class SettingsDialog(QDialog):
                 registry.unlock_master(dialog.password())
                 return True
             except WrongMasterPasswordError:
-                QMessageBox.warning(
+                CopyableMessageBox.warning(
                     self,
                     "Мастер-пароль",
                     "Неверный мастер-пароль. Попробуйте ещё раз.",

@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from gui.widgets.copyable_alert import CopyableMessageBox
+
 MIN_PASSWORD_LENGTH = 6
 
 
@@ -113,16 +115,12 @@ class MasterPasswordDialog(QDialog):
         password = self.ed_password.text()
 
         if not password:
-            from PySide6.QtWidgets import QMessageBox
-
-            QMessageBox.warning(self, "Мастер-пароль", "Введите пароль.")
+            CopyableMessageBox.warning(self, "Мастер-пароль", "Введите пароль.")
             return
 
         if self._mode == "create":
             if len(password) < MIN_PASSWORD_LENGTH:
-                from PySide6.QtWidgets import QMessageBox
-
-                QMessageBox.warning(
+                CopyableMessageBox.warning(
                     self,
                     "Мастер-пароль",
                     f"Пароль слишком короткий: минимум "
@@ -130,9 +128,7 @@ class MasterPasswordDialog(QDialog):
                 )
                 return
             if password != self.ed_confirm.text():
-                from PySide6.QtWidgets import QMessageBox
-
-                QMessageBox.warning(
+                CopyableMessageBox.warning(
                     self,
                     "Мастер-пароль",
                     "Пароли не совпадают.",

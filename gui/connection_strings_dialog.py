@@ -33,7 +33,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QTabWidget,
@@ -47,6 +46,7 @@ from common.connection_string import (
 )
 from common.server_registry import ServerSpec, registry
 from gui import styles as theme_styles
+from gui.widgets.copyable_alert import CopyableMessageBox
 
 
 class ConnectionStringsDialog(QDialog):
@@ -160,7 +160,7 @@ class ConnectionStringsDialog(QDialog):
         try:
             content = Path(path).read_text(encoding="utf-8")
         except OSError as ex:
-            QMessageBox.warning(self, "Импорт", f"Не удалось прочитать файл: {ex}")
+            CopyableMessageBox.warning(self, "Импорт", f"Не удалось прочитать файл: {ex}")
             return
 
         self.ed_import.setPlainText(content)
@@ -170,7 +170,7 @@ class ConnectionStringsDialog(QDialog):
         lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
 
         if not lines:
-            QMessageBox.warning(self, "Импорт", "Введите строки подключения.")
+            CopyableMessageBox.warning(self, "Импорт", "Введите строки подключения.")
             return
 
         replace = self.chk_replace.isChecked()
@@ -192,7 +192,7 @@ class ConnectionStringsDialog(QDialog):
             specs.append(spec)
 
         if not specs and not errors:
-            QMessageBox.information(
+            CopyableMessageBox.information(
                 self,
                 "Импорт",
                 "Все серверы уже существуют. Используйте «Заменить "
@@ -222,9 +222,9 @@ class ConnectionStringsDialog(QDialog):
         summary = f"Импорт завершён. {', '.join(parts)}."
 
         if errors:
-            QMessageBox.warning(self, "Импорт", summary + "\n\n" + "\n".join(errors))
+            CopyableMessageBox.warning(self, "Импорт", summary + "\n\n" + "\n".join(errors))
         else:
-            QMessageBox.information(self, "Импорт", summary)
+            CopyableMessageBox.information(self, "Импорт", summary)
 
         self.accept()
 
@@ -283,11 +283,11 @@ class ConnectionStringsDialog(QDialog):
         text = self.ed_export.toPlainText().strip()
 
         if not text:
-            QMessageBox.information(self, "Экспорт", "Нет серверов для экспорта.")
+            CopyableMessageBox.information(self, "Экспорт", "Нет серверов для экспорта.")
             return
 
         QApplication.instance().clipboard().setText(text)
-        QMessageBox.information(
+        CopyableMessageBox.information(
             self,
             "Экспорт",
             f"Скопировано строк: {len(text.splitlines())}.",
@@ -308,10 +308,10 @@ class ConnectionStringsDialog(QDialog):
         try:
             Path(path).write_text(text + ("\n" if text else ""), encoding="utf-8")
         except OSError as ex:
-            QMessageBox.warning(self, "Экспорт", f"Не удалось сохранить файл: {ex}")
+            CopyableMessageBox.warning(self, "Экспорт", f"Не удалось сохранить файл: {ex}")
             return
 
-        QMessageBox.information(
+        CopyableMessageBox.information(
             self,
             "Экспорт",
             f"Сохранено строк: {len(text.splitlines())}.\nФайл: {path}",

@@ -62,6 +62,8 @@ from gui import styles as theme_styles
 from gui.widgets.status_bar import StatusBar
 from gui.widgets.collapsible_splitter import CollapsibleSplitter
 from gui.widgets.help_icon import HelpIcon
+from gui.widgets.copyable_alert import CopyableMessageBox
+from common.db_errors import humanize_db_error
 from gui.worker_thread import WorkerHost
 from gui.servers_tree import ServersTree
 from gui.result_table import ResultTable
@@ -407,7 +409,7 @@ class MainWindow(QWidget):
                 registry.ensure_key()
                 return True
             except WrongMasterPasswordError:
-                QMessageBox.warning(
+                CopyableMessageBox.warning(
                     self,
                     "Мастер-пароль",
                     "Неверный мастер-пароль. Попробуйте ещё раз.",
@@ -441,7 +443,7 @@ class MainWindow(QWidget):
                 registry.setup_vault(BACKEND_FILE_KEY)
             return True
         except VaultError as ex:
-            QMessageBox.warning(self, "Защита реквизитов", str(ex))
+            CopyableMessageBox.warning(self, "Защита реквизитов", str(ex))
             return False
 
     def _open_settings(self):
@@ -514,10 +516,10 @@ class MainWindow(QWidget):
         if not self._ensure_vault_for_write():
             return
 
-        answer = QMessageBox.question(
+        answer = CopyableMessageBox.question(
             self,
-            "Remove server",
-            f"Remove server '{host}'?",
+            "Удаление сервера",
+            f"Удалить сервер «{host}»?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -586,7 +588,7 @@ class MainWindow(QWidget):
             )
             return
 
-        answer = QMessageBox.warning(
+        answer = CopyableMessageBox.warning(
             self,
             "Удаление базы данных",
             f"Вы действительно хотите удалить базу данных\n"
@@ -637,7 +639,7 @@ class MainWindow(QWidget):
             )
             return
 
-        answer = QMessageBox.warning(
+        answer = CopyableMessageBox.warning(
             self,
             "Отсоединение базы данных",
             f"Отсоединить БД «{database}» на сервере «{server}»?\n\n"
@@ -796,11 +798,11 @@ class MainWindow(QWidget):
         )
         logger.action(f"ERROR {op_name}: {host}.{database} — {message}")
 
-        QMessageBox.critical(
+        CopyableMessageBox.critical(
             self,
             f"Ошибка {op_name} базы данных",
             f"Не удалось выполнить {op_name} БД «{database}» "
-            f"на сервере «{host}»:\n\n{message}",
+            f"на сервере «{host}»:\n\n{humanize_db_error(message)}",
         )
 
     # ----------------------------------------------------------
@@ -1578,19 +1580,17 @@ class MainWindow(QWidget):
 
         Возвращает "replace" | "append" | None (отмена: кнопка, Esc, закрытие).
         """
-        box = QMessageBox(self)
-        box.setWindowTitle("SQL-консоль не пуста")
-        box.setText("В консоли уже есть текст. Как вставить скрипт?")
-        b_replace = box.addButton("Заменить содержимое", QMessageBox.DestructiveRole)
-        b_append = box.addButton("Добавить в конец", QMessageBox.ActionRole)
-        box.addButton("Отмена", QMessageBox.RejectRole)
+        box = CopyableMessageBox(
+            self,
+            title="SQL-консоль не пуста",
+            text="В консоли уже есть текст. Как вставить скрипт?",
+            buttons=[("Заменить содержимое", "replace"),
+                     ("Добавить в конец", "append"),
+                     ("Отмена", None)],
+            defaultButton=None,
+        )
         box.exec()
-        clicked = box.clickedButton()
-        if clicked is b_replace:
-            return "replace"
-        if clicked is b_append:
-            return "append"
-        return None
+        return box.result_value
 
     def _script_insert_to_console(self, text: str, prefix: str = "") -> None:
         mode = self._ask_insert_mode() if self.panel.script_text().strip() else "append"
@@ -1629,7 +1629,7 @@ class MainWindow(QWidget):
         """True — вкладку можно закрыть (с сохранением или без)."""
         if not tab.is_dirty():
             return True
-        answer = QMessageBox.question(
+        answer = CopyableMessageBox.question(
             self,
             "Несохранённые изменения",
             f"Сохранить изменения скрипта «{tab.script_name()}»?",
@@ -1679,10 +1679,10 @@ class MainWindow(QWidget):
             return
 
         if not self.panel.write_enabled() and is_write_statement(sql):
-            answer = QMessageBox.question(
+            answer = CopyableMessageBox.question(
                 self,
-                "Write query",
-                "The query may modify data.\n\nContinue?",
+                "Возможна модификация данных",
+                "Запрос может изменить данные.\n\nПродолжить?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
             )
@@ -2247,7 +2247,7 @@ class MainWindow(QWidget):
             identity_pairs,
         )
 
-        answer = QMessageBox.question(
+        answer = CopyableMessageBox.question(
             self,
             "Подтвердите изменение",
             (
@@ -3070,7 +3070,7 @@ class MainWindow(QWidget):
         self._menu_remove.setEnabled(has)
 
     def _menu_about(self):
-        QMessageBox.about(
+        CopyableMessageBox.about(
             self,
             "О программе",
             f"<b>Parallels SQL Admin</b><br>"

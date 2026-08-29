@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -38,6 +37,7 @@ from common.server_registry import (
 )
 from gui import styles as theme_styles
 from gui.widgets.help_icon import HelpIcon
+from gui.widgets.copyable_alert import CopyableMessageBox
 from gui.worker_thread import WorkerHost
 
 
@@ -272,19 +272,19 @@ class ServerDialog(QDialog):
         self._test_host = None
 
         if ok:
-            text = "Connection successful."
+            text = "Соединение успешно установлено."
             if version:
                 text += f"\n\nСервер: {version}"
-            QMessageBox.information(
+            CopyableMessageBox.information(
                 self,
-                "Test Connection",
+                "Проверка соединения",
                 text,
             )
         else:
-            QMessageBox.warning(
+            CopyableMessageBox.warning(
                 self,
-                "Test Connection",
-                f"Connection failed: {message}",
+                "Проверка соединения",
+                f"Не удалось установить соединение: {message}",
             )
 
     # ----------------------------------------------------------
@@ -303,18 +303,18 @@ class ServerDialog(QDialog):
 
     def _accept(self) -> None:
         if not self.ed_host.text().strip():
-            self._show_error("Enter the server host.")
+            self._show_error("Укажите адрес сервера.")
             return
 
         if not self.ed_user.text().strip():
-            self._show_error("Enter the user for the server.")
+            self._show_error("Укажите пользователя для сервера.")
             return
 
         self.accept()
 
     def _show_error(self, message: str) -> None:
-        QMessageBox.warning(
+        CopyableMessageBox.warning(
             self,
-            "Server",
+            "Сервер",
             message,
         )

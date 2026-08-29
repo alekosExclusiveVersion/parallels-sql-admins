@@ -540,7 +540,7 @@ class TestDbOpErrorModal(unittest.TestCase):
         window.append_log = MagicMock()
         self.window = window
 
-    @patch("gui.main_window.QMessageBox.critical")
+    @patch("gui.main_window.CopyableMessageBox.critical")
     def test_shows_modal_on_error(self, mock_critical):
         MainWindow._db_op_error(self.window, "boom")
 
@@ -552,6 +552,19 @@ class TestDbOpErrorModal(unittest.TestCase):
         self.assertIn("«mydb»", combined)
         self.assertIn("«h1»", combined)
         self.assertIn("boom", combined)
+
+    @patch("gui.main_window.CopyableMessageBox.critical")
+    def test_humanizes_known_db_error_to_russian(self, mock_critical):
+        MainWindow._db_op_error(
+            self.window,
+            "Cannot open database \"ARSPARTS\" requested by the login.",
+        )
+
+        args = mock_critical.call_args.args
+        combined = args[2]
+        self.assertIn("соединение с сервером", combined)
+        self.assertIn("«mydb»", combined)
+        self.assertNotIn("Cannot open database", combined)
 
 
 if __name__ == "__main__":
