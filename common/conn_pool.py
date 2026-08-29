@@ -148,7 +148,11 @@ class ConnectionPool:
         )
 
         try:
-            for _ in range(2):
+            # Вычищаем дохлые idle-соединения и в любом случае выходим на
+            # открытие нового: при двух и более мёртвых idle прежний цикл
+            # (range(2)) съедал все итерации на их удаление и падал в
+            # PoolTimeout, не открыв свежего соединения.
+            for _ in range(len(kp.conns) + 2):
                 with self._lock:
                     pc = self._pick_idle(kp, tid, now)
 
@@ -202,6 +206,8 @@ class ConnectionPool:
             kp.slots.release()
             raise
 
+        # Практически недостижимо: цикл всегда выходит либо через возврат
+        # соединения, либо через исключение.
         raise PoolTimeout(
             f"pool '{self._name}': не удалось получить соединение к {host}"
         )

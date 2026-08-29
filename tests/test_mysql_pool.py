@@ -117,6 +117,61 @@ class TestPoolReuse(unittest.TestCase):
 
         self.assertEqual(self.factory.opens, 2)
 
+    @patch("common.conn_pool.time")
+    def test_multiple_dead_idle_connections_recreate(self, mock_time):
+        import threading
+        import time as time_mod
+
+        from common.config import config
+
+        mock_time.monotonic.return_value = 100.0
+        factory = ConnFactory()
+        client = MySQLClient(cfg=replace(config.mysql, pool_idle=2))
+        client._open_connection = factory.open
+        client._discard_conn = lambda conn: conn.close()
+
+        release = threading.Event()
+        results = {"ok": 0}
+        lock = threading.Lock()
+
+        def worker(_):
+            with client.connect("h1", "db1"):
+                with lock:
+                    results["ok"] += 1
+                release.wait(5)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(2)]
+        for t in threads:
+            t.start()
+
+        deadline = time_mod.time() + 5
+        while time_mod.time() < deadline:
+            if client._pool.active_by_key().get(("h1", "db1"), {}).get("in_use", 0) == 2:
+                break
+            time_mod.sleep(0.01)
+
+        self.assertEqual(
+            client._pool.active_by_key()[("h1", "db1")]["in_use"], 2
+        )
+        release.set()
+        for t in threads:
+            t.join(timeout=5)
+
+        self.assertEqual(results["ok"], 2)
+        self.assertEqual(factory.opens, 2)
+
+        kp = client._pool._entries[("h1", "db1")]
+        self.assertEqual(len(kp.conns), 2)
+        for pc in kp.conns:
+            pc.conn.alive = False
+
+        mock_time.monotonic.return_value = 106.0
+        with client.connect("h1", "db1") as c:
+            self.assertTrue(c.alive)
+            self.assertEqual(factory.opens, 3)
+
+        self.assertTrue(all(c.closed for c in factory.conns[:2]))
+
     def test_idle_cache_is_bounded(self):
         for i in range(10):
             with self.client.connect("h1", str(i)):
