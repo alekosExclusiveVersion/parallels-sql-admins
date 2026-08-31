@@ -47,6 +47,31 @@ SCRIPTS_FILE = DATA_DIR / "scripts.json"
 
 DEFAULT_SCRIPT_NAME = "Проверка cfg_settings"
 
+DEFAULT_FINALITY_STATES_SCRIPT_NAME = (
+    "Финальность состояний позиций (Возврат от клиента / поставщику)"
+)
+
+DEFAULT_FINALITY_STATES_SCRIPT = """SELECT
+    stt_id, stt_name, stt_archive, stt_archive_restriction
+FROM
+    order_states
+WHERE
+    LOWER(stt_name) IN ('возврат от клиента', 'возврат поставщику');
+
+UPDATE
+    order_states
+SET
+    stt_archive = 'Y'
+WHERE
+    LOWER(stt_name) IN ('возврат от клиента', 'возврат поставщику');
+
+SELECT
+    stt_id, stt_name, stt_archive, stt_archive_restriction
+FROM
+    order_states
+WHERE
+    LOWER(stt_name) IN ('возврат от клиента', 'возврат поставщику');"""
+
 
 class ScriptStore:
     """Загрузка и сохранение библиотеки скриптов (scripts.json).
@@ -74,7 +99,11 @@ class ScriptStore:
                 self._scripts = []
         if not self._scripts:
             self._scripts = [
-                {"name": DEFAULT_SCRIPT_NAME, "body": DEFAULT_SCAN_TEMPLATE}
+                {"name": DEFAULT_SCRIPT_NAME, "body": DEFAULT_SCAN_TEMPLATE},
+                {
+                    "name": DEFAULT_FINALITY_STATES_SCRIPT_NAME,
+                    "body": DEFAULT_FINALITY_STATES_SCRIPT,
+                },
             ]
             self.save_scripts()
 
