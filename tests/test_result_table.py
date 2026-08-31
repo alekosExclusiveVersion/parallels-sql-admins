@@ -118,6 +118,25 @@ class ResultTableTest(unittest.TestCase):
         # Строка "aa" непустая и содержит "a"; "bb" непустая, но не содержит.
         self.assertEqual(self._visible_rows(), [0])
 
+    def test_multiple_column_filters_combine_with_and(self):
+        # AND: строка видна, только если совпадает со ВСЕМИ заполненными
+        # фильтрами колонок (колонки 1 «Server», 3 «Value»).
+        self._add(["SQL", "h", "db", "a"])
+        self._add(["SQL", "h", "db", "b"])
+        self._add(["SQL", "x", "db", "a"])
+        self._add(["SQL", "x", "db", "b"])
+
+        self.table.filter_header._edits[1].setText("h")
+        self.table.filter_header._edits[3].setText("a")
+        self.table.apply_filters()
+
+        self.assertEqual(self._visible_rows(), [0])
+
+    def tearDown(self):
+        self.table.close()
+        self.table.deleteLater()
+        super().tearDown()
+
     def test_sync_filter_columns_resets_empty_flags(self):
         self._add(["SQL", "h", "db", "a"])
         self.table._toggle_empty_filter(3, True)

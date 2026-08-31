@@ -576,7 +576,8 @@ class ResultTable(QTableWidget):
         и «Только рабочие» фильтры.
 
         Общий поиск и поколоночный поиск связаны через AND; несколько
-        заполненных полей колонок объединяются через OR.
+        заполненных полей колонок объединяются через AND (каждая колонка
+        должна совпасть со своим фильтром).
         """
         search = (self._search_edit.text().strip().lower()
                   if self._search_edit is not None else "")
@@ -608,10 +609,11 @@ class ResultTable(QTableWidget):
 
         def _matches_columns(row_texts):
             for column, col_filter in enumerate(column_filters):
-                if col_filter and column < len(row_texts):
-                    if col_filter in row_texts[column]:
-                        return True
-            return False
+                if not col_filter:
+                    continue
+                if column >= len(row_texts) or col_filter not in row_texts[column]:
+                    return False
+            return True
 
         def _matches_empty_nonempty(row_texts):
             """Фильтры «пустые/не пустые» из меню шапки (AND по колонкам)."""
