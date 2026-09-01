@@ -381,6 +381,9 @@ class MySQLClient:
         вручную. Никаких дополнительных фильтров (prefix/regex/ignore)
         не применяется — маску задаёт пользователь явно.
 
+        Домен (site) для найденных БД дозаполняется через Plesk psa
+        независимо от типа маски (и по имени БД, и по домену).
+
         Если маска похожа на домен (содержит точку):
         1) ищет БД через Plesk `psa`: связку data_bases.dom_id → domains.name;
         2) извлекает базовое имя (до первой точки) и ищет через SHOW DATABASES.
@@ -439,6 +442,12 @@ class MySQLClient:
             if db and db not in seen:
                 seen.add(db)
                 unique.append(item)
+
+        # Дозаполняем домен (site) для найденных БД через Plesk psa —
+        # в т.ч. и для поиска по маске имени (без точки), где раньше
+        # колонка «Сайт» оставалась пустой. Заполняются только те БД,
+        # у которых site ещё пуст; при недоступности psa тихо пропускается.
+        self._fill_sites_from_psa(conn, unique)
         return unique
 
     def database_update_times(
@@ -614,6 +623,51 @@ class MySQLClient:
             for row in rows
             if row.get("db_name")
         ]
+
+    def _fill_sites_from_psa(
+        self,
+        conn,
+        items: list[dict[str, str]],
+    ) -> None:
+        """Дозаполняет домен (site) для найденных БД через Plesk psa.
+
+        Для каждой БД из items, у которой site ещё пуст, подтягивает
+        домен из синтаксиса psa (data_bases → domains). Выполняется
+        на переданном соединении одним/несколькими запросами (чанками),
+        чтобы не нагружать сервер. При недоступности psa тихо пропускает
+        (site остаётся пустым). Модифицирует items на месте.
+        """
+        missing = [item["db"] for item in items if not item.get("site")]
+        if not missing:
+            return
+
+        site_map: dict[str, str] = {}
+        try:
+            for chunk in sql_builder.chunk(missing, 200):
+                placeholders = ", ".join(["%s"] * len(chunk))
+                rows = self.execute_on_connection(
+                    conn,
+                    "SELECT db.name AS db_name, d.name AS site_name "
+                    "FROM psa.data_bases db "
+                    "JOIN psa.domains d ON d.id = db.dom_id "
+                    "WHERE db.type = 'mysql' "
+                    f"AND db.name IN ({placeholders})",
+                    tuple(chunk),
+                )
+                for row in rows:
+                    name = row.get("db_name")
+                    if name and name not in site_map:
+                        site_map[name] = row.get("site_name", "")
+        except Exception as ex:
+            logger.warning(
+                f"{getattr(conn, 'host', '?')}: заполнение домена "
+                f"недоступно (psa) — {ex}"
+            )
+            return
+
+        for item in items:
+            if not item.get("site"):
+                item["site"] = site_map.get(item["db"], "")
 
     def has_cfg_settings_conn(self, conn, database: str) -> bool:
         rows = self.execute_on_connection(
