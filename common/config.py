@@ -101,6 +101,7 @@ class FilterConfig:
     target_value: str
     database_prefix: str
     exclude_database_regex: str
+    site_setting: str
 
 
 @dataclass(frozen=True)
@@ -348,6 +349,11 @@ def load_config(config_file: str | Path | None = None) -> Config:
                 "filter",
                 "exclude_database_regex",
                 fallback="",
+            ),
+            site_setting=p.get(
+                "filter",
+                "site_setting",
+                fallback="csSiteDomain",
             ),
         ),
         logging=LoggingConfig(

@@ -36,6 +36,47 @@ Rules:
 - `.env`, `*.key`, `*.pem`, `*.secret` files must never be committed
 - If you accidentally stage a secret, remove it from the index before committing
 
+## Read-only DB access (headless scripts)
+
+Real server credentials live in the app data dir, **not** in the repo config:
+
+- macOS data dir: `~/Library/Application Support/Parallels SQL Admin/`
+- `servers.json` holds hosts + passwords encrypted with a Fernet key from `servers.key` (vault backend `file_key`, auto-unlock via `registry.ensure_key()`)
+- Do **not** copy passwords or `servers.key` into repo files; scripts must read credentials through the app's own code
+
+To run a script that connects with real credentials (same path the GUI uses):
+
+```python
+import sys
+from pathlib import Path
+
+APP = Path.home() / "Library/Application Support/Parallels SQL Admin"
+sys.path.insert(0, "/path/to/parallels-sql-admins")
+
+import common.config as C
+cfg = C.load_config(APP / "config.ini")
+object.__setattr__(cfg.advanced, "servers_file", str(APP / "servers.json"))
+C.config = cfg
+
+from common.server_registry import ServerRegistry
+
+sr = ServerRegistry()
+sr.ensure_key()
+mysql_hosts = [s.host for s in sr.load() if s.engine == "mysql" and s.password]
+
+from common.mysql_client import mysql
+
+# read-only query with LIMIT
+rows = mysql.query(host, "SELECT ... LIMIT 10", params=())
+mysql.close_all()
+```
+
+Hints:
+- `cfg.advanced` is a frozen dataclass — override `servers_file` only via `object.__setattr__`
+- The repo `config.ini` points to `servers.txt`/repo `servers.json` with empty passwords — pointing at it yields "Access denied ... using password: NO"
+- Domain for a database lives in that DB's `cfg_settings` table under key `csSiteDomain` (e.g. `www.autopolyus.ru`), not in Plesk `psa` (which does not exist on these hosts)
+- Domain lookup (`search_databases`): for name masks the site is filled from `cfg_settings.csSiteDomain` per DB; for domain masks (containing a dot) DBs are matched by the same key (only DBs passing the `database_prefix`/`exclude_database_regex`/`ignore` filters are scanned, then `UNION ALL` per 50 DBs)
+
 ## Code Style
 
 - No comments unless asked

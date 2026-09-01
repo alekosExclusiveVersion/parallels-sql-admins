@@ -3,11 +3,11 @@ tests/test_db_search.py
 
 Тесты поиска БД (backend/db_search_worker.py -> common/mysql_client.py):
 - поиск по маске имени (SHOW DATABASES LIKE) с дозаполнением
-  домена (site) из Plesk psa по найденным БД;
-- доменная маска (с точкой) дополнительно находит БД через Plesk psa;
-- извлечение базового имени (activauto.ru → activauto);
+  домена (site) из cfg_settings.csSiteDomain найденных БД;
+- доменная маска (с точкой) дополнительно находит БД по совпадению
+  csSiteDomain (cfg_settings) и по базовому имени (activauto.ru → activauto);
 - объединение результатов без дублей;
-- graceful fallback, когда psa недоступен;
+- graceful fallback, когда чтение настроек недоступно;
 - фильтрация слишком коротких base (< 3 символов);
 - фильтрация base с wildcards.
 """
@@ -33,28 +33,58 @@ class SearchCursor:
     def execute(self, sql, params=None):
         self.owner.executions.append((sql, params))
 
-        if "FROM psa.data_bases" in sql:
-            if self.owner.raise_on_psa:
+        if "information_schema.tables" in sql:
+            # filter_databases_with_settings_conn: список БД с таблицей настроек
+            self._result = self.owner.settings_tables_result
+        elif "stg_value LIKE" in sql:
+            # поиск по домену (UNION ALL ... WHERE stg_value LIKE ...)
+            if self.owner.raise_on_domain:
                 raise RuntimeError("SELECT command denied to user")
-            self._result = self.owner.psa_result
-        elif "SHOW DATABASES" in sql:
-            self._result = self.owner.show_result
+            self._result = self.owner.domain_result
+        elif "SELECT stg_value" in sql:
+            # дозаполнение домена: точечный SELECT stg_value для одной БД
+            db = self._db_ident(sql)
+            value = self.owner.settings_sites.get(db, "")
+            self._result = [{"stg_value": value}] if value else []
+        elif "SHOW DATABASES" in sql and "LIKE" not in sql:
+            # list_databases_conn: полный перечень БД (без маски)
+            self._result = self.owner.show_all_result
         else:
             self._result = self.owner.show_result
 
         return 0
+
+    @staticmethod
+    def _db_ident(sql):
+        """ar_shop_ru из SELECT ... FROM `ar_shop_ru`.`cfg_settings`."""
+        start = sql.find("`")
+        if start < 0:
+            return ""
+        end = sql.find("`", start + 1)
+        return sql[start + 1:end] if end > start else ""
 
     def fetchall(self):
         return self._result
 
 
 class SearchConn:
-    def __init__(self, host, show_result, psa_result):
+    def __init__(
+        self,
+        host,
+        show_result,
+        show_all_result,
+        settings_tables_result=None,
+        settings_sites=None,
+        domain_result=None,
+    ):
         self.host = host
         self._psql_db = None
         self.show_result = show_result
-        self.psa_result = psa_result
-        self.raise_on_psa = False
+        self.show_all_result = show_all_result
+        self.settings_tables_result = settings_tables_result or []
+        self.settings_sites = settings_sites or {}
+        self.domain_result = domain_result or []
+        self.raise_on_domain = False
         self.executions = []
         self.alive = True
 
@@ -77,17 +107,35 @@ class SearchConn:
 
 
 class SearchFactory:
-    def __init__(self, show_result=None, psa_result=None, raise_on_psa=False):
+    def __init__(
+        self,
+        show_result=None,
+        show_all_result=None,
+        settings_tables_result=None,
+        settings_sites=None,
+        domain_result=None,
+        raise_on_domain=False,
+    ):
         self.show_result = show_result or []
-        self.psa_result = psa_result or []
-        self.raise_on_psa = raise_on_psa
+        self.show_all_result = show_all_result or (show_result or [])
+        self.settings_tables_result = settings_tables_result or []
+        self.settings_sites = settings_sites or {}
+        self.domain_result = domain_result or []
+        self.raise_on_domain = raise_on_domain
         self.opens = 0
         self.conns = []
 
     def open(self, host, database=None):
         self.opens += 1
-        conn = SearchConn(host, self.show_result, self.psa_result)
-        conn.raise_on_psa = self.raise_on_psa
+        conn = SearchConn(
+            host,
+            self.show_result,
+            self.show_all_result,
+            self.settings_tables_result,
+            self.settings_sites,
+            self.domain_result,
+        )
+        conn.raise_on_domain = self.raise_on_domain
         self.conns.append(conn)
         return conn
 
@@ -103,44 +151,77 @@ def _db_sites(items):
 
 
 class TestDatabaseSearch(unittest.TestCase):
-    def _client(self, show_result, psa_result=None):
-        factory = SearchFactory(show_result, psa_result)
+    def _client(
+        self,
+        show_result,
+        show_all_result=None,
+        settings_tables_result=None,
+        settings_sites=None,
+        domain_result=None,
+        raise_on_domain=False,
+    ):
+        factory = SearchFactory(
+            show_result,
+            show_all_result,
+            settings_tables_result=settings_tables_result,
+            settings_sites=settings_sites,
+            domain_result=domain_result,
+            raise_on_domain=raise_on_domain,
+        )
         client = MySQLClient()
         client._open_connection = factory.open
         client._discard_conn = lambda conn: conn.close()
         return client, factory
 
-    def test_search_by_name_enriches_sites_from_psa(self):
+    def test_search_by_name_enriches_sites_from_settings(self):
         show = [
             {"Database": "ar_example_com"},
             {"Database": "ar_shop_ru"},
         ]
-        psa = [
-            {"db_name": "ar_shop_ru", "site_name": "shop.ru"},
+        # cfg_settings есть у обоих, но csSiteDomain заполнен только у shop_ru
+        tables = [
+            {"table_schema": "ar_example_com"},
+            {"table_schema": "ar_shop_ru"},
         ]
-        client, factory = self._client(show, psa)
+        sites = {"ar_shop_ru": "shop.ru"}
+        client, factory = self._client(
+            show,
+            settings_tables_result=tables,
+            settings_sites=sites,
+        )
 
         result = client.search_databases("h1", "ar_%")
 
         self.assertEqual(
             _db_names(result), ["ar_example_com", "ar_shop_ru"]
         )
-        # домены дозаполнены из psa и при поиске по имени (без точки)
+        # домены дозаполнены из cfg_settings и при поиске по имени (без точки)
         sites = _db_sites(result)
         self.assertEqual(sites.get("ar_shop_ru"), "shop.ru")
         self.assertEqual(sites.get("ar_example_com"), "")
         conn = factory.conns[0]
-        self.assertEqual(len(conn.executions), 3)
+        self.assertEqual(len(conn.executions), 5)
         self.assertIn("SHOW DATABASES", conn.executions[1][0])
-        self.assertIn("psa.data_bases", conn.executions[2][0])
+        self.assertIn("information_schema.tables", conn.executions[2][0])
+        self.assertIn("stg_value", conn.executions[3][0])
+        self.assertIn("stg_value", conn.executions[4][0])
 
-    def test_domain_mask_merges_psa_results(self):
+    def test_domain_mask_merges_settings_results(self):
         show = [{"Database": "ar_example_com"}]
-        psa = [
-            {"db_name": "ar_example_com_db", "site_name": "example.com"},
-            {"db_name": "ar_other_site", "site_name": "other.com"},
+        tables = [
+            {"table_schema": "ar_example_com"},
+            {"table_schema": "ar_example_com_db"},
+            {"table_schema": "ar_other_site"},
         ]
-        client, factory = self._client(show, psa)
+        domain = [
+            {"db_name": "ar_example_com_db", "stg_value": "example.com"},
+            {"db_name": "ar_other_site", "stg_value": "other.com"},
+        ]
+        client, factory = self._client(
+            show,
+            settings_tables_result=tables,
+            domain_result=domain,
+        )
 
         result = client.search_databases("h1", "example.com")
 
@@ -148,18 +229,26 @@ class TestDatabaseSearch(unittest.TestCase):
         self.assertIn("ar_example_com", names)
         self.assertIn("ar_example_com_db", names)
         self.assertIn("ar_other_site", names)
-        # psa sites preserved
+        # найденные по домену БД сохраняют site из cfg_settings
         sites = _db_sites(result)
         self.assertEqual(sites.get("ar_example_com_db"), "example.com")
         self.assertEqual(sites.get("ar_other_site"), "other.com")
 
     def test_domain_mask_dedupes_results(self):
         show = [{"Database": "ar_example_com"}]
-        psa = [
-            {"db_name": "ar_example_com", "site_name": "example.com"},
-            {"db_name": "ar_example_com_db", "site_name": "example.com"},
+        tables = [
+            {"table_schema": "ar_example_com"},
+            {"table_schema": "ar_example_com_db"},
         ]
-        client, factory = self._client(show, psa)
+        domain = [
+            {"db_name": "ar_example_com", "stg_value": "example.com"},
+            {"db_name": "ar_example_com_db", "stg_value": "example.com"},
+        ]
+        client, factory = self._client(
+            show,
+            settings_tables_result=tables,
+            domain_result=domain,
+        )
 
         result = client.search_databases("h1", "example.com")
 
@@ -167,18 +256,21 @@ class TestDatabaseSearch(unittest.TestCase):
             _db_names(result), ["ar_example_com", "ar_example_com_db"]
         )
 
-    def test_psa_unavailable_falls_back(self):
+    def test_domain_lookup_unavailable_falls_back(self):
         show = [{"Database": "ar_example_com"}]
-        factory = SearchFactory(show, raise_on_psa=True)
-        client = MySQLClient()
-        client._open_connection = factory.open
-        client._discard_conn = lambda conn: conn.close()
+        tables = [{"table_schema": "ar_example_com"}]
+        client, factory = self._client(
+            show,
+            settings_tables_result=tables,
+            raise_on_domain=True,
+        )
 
         result = client.search_databases("h1", "example.com")
 
+        # база по имени всё равно находится через SHOW LIKE '%example%'
         self.assertEqual(_db_names(result), ["ar_example_com"])
         conn = factory.conns[0]
-        self.assertEqual(len(conn.executions), 5)
+        self.assertEqual(len(conn.executions), 8)
 
     def test_empty_mask_returns_empty(self):
         client, factory = self._client([{"Database": "ar_example_com"}])
@@ -192,8 +284,7 @@ class TestDatabaseSearch(unittest.TestCase):
             {"Database": "autoprice_activautoru"},
             {"Database": "ar_activautoru"},
         ]
-        psa = []
-        client, factory = self._client(show, psa)
+        client, factory = self._client(show)
 
         result = client.search_databases("h1", "activauto.ru")
 
@@ -201,54 +292,58 @@ class TestDatabaseSearch(unittest.TestCase):
         self.assertIn("autoprice_activautoru", names)
         self.assertIn("ar_activautoru", names)
         conn = factory.conns[0]
-        self.assertEqual(len(conn.executions), 5)
-        base_sql = conn.executions[3][0]
+        self.assertEqual(len(conn.executions), 6)
+        base_sql = conn.executions[4][0]
         self.assertIn("SHOW DATABASES", base_sql)
         self.assertIn("activauto", base_sql)
 
     def test_base_name_too_short_skipped(self):
         """a.ru → base='a' (< 3) → пропуск base search."""
         show = [{"Database": "a_ru"}]
-        psa = []
-        client, factory = self._client(show, psa)
+        client, factory = self._client(show)
 
         result = client.search_databases("h1", "a.ru")
 
         self.assertEqual(_db_names(result), ["a_ru"])
         conn = factory.conns[0]
-        # 4 queries: SET SESSION, SHOW (mask), psa, site-fill — base skipped
+        # 4 queries: SET SESSION, SHOW (mask), SHOW (list), site-fill-фильтр
         self.assertEqual(len(conn.executions), 4)
 
     def test_base_name_with_wildcards_skipped(self):
         """*shop*.com → base='*shop*' (содержит *) → пропуск."""
         show = [{"Database": "shop_com"}]
-        psa = []
-        client, factory = self._client(show, psa)
+        client, factory = self._client(show)
 
         result = client.search_databases("h1", "*shop*.com")
 
         conn = factory.conns[0]
-        # 4 queries: SET SESSION, SHOW (mask), psa, site-fill — base skipped
+        # 4 queries: SET SESSION, SHOW (mask), SHOW (list), site-fill-фильтр
         self.assertEqual(len(conn.executions), 4)
 
     def test_base_name_with_underscore_skipped(self):
         """my_site.com → base='my_site' (содержит _) → пропуск."""
         show = [{"Database": "my_site_com"}]
-        psa = []
-        client, factory = self._client(show, psa)
+        client, factory = self._client(show)
 
         result = client.search_databases("h1", "my_site.com")
 
         conn = factory.conns[0]
         self.assertEqual(len(conn.executions), 4)
 
-    def test_psa_returns_site(self):
-        """psa возвращает site_name для найденных БД."""
+    def test_domain_returns_site(self):
+        """Поиск по домену возвращает site для найденных БД."""
         show = []
-        psa = [
-            {"db_name": "ar_shop_ru", "site_name": "shop.ru"},
+        show_all = [{"Database": "ar_shop_ru"}]
+        tables = [{"table_schema": "ar_shop_ru"}]
+        domain = [
+            {"db_name": "ar_shop_ru", "stg_value": "shop.ru"},
         ]
-        client, factory = self._client(show, psa)
+        client, factory = self._client(
+            show,
+            show_all_result=show_all,
+            settings_tables_result=tables,
+            domain_result=domain,
+        )
 
         result = client.search_databases("h1", "shop.ru")
 
