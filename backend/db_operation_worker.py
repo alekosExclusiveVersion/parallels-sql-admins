@@ -22,6 +22,7 @@ class DbOperation(str, Enum):
     DETACH = "detach"
     ATTACH = "attach"
     RESTORE = "restore"
+    SHRINK_LOG = "shrink_log"
 
 
 class DatabaseOperationWorker(QObject):
@@ -82,6 +83,9 @@ class DatabaseOperationWorker(QObject):
                         self._file_path,
                         replace=self._replace,
                     )
+
+                case DbOperation.SHRINK_LOG:
+                    client.shrink_log(self._host, self._database)
 
                 case _:
                     raise ValueError(

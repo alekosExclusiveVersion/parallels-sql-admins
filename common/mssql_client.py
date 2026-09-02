@@ -518,6 +518,32 @@ GROUP BY database_id
             f"WITH {with_replace}".rstrip(),
         )
 
+    def shrink_log(self, host: str, database: str) -> None:
+        """Очищает журнал транзакций БД: SIMPLE → SHRINKFILE → FULL.
+
+        Метод безопасен для production: RECOVERY FULL восстанавливается
+        после шринка, даже если SHNINKFILE выбросил исключение.
+        """
+        escaped = _escape_bracket(database)
+
+        logger.info(f"{host}: shrink log [{escaped}]")
+        self.query(
+            host,
+            f"USE [master]; "
+            f"ALTER DATABASE [{escaped}] SET RECOVERY SIMPLE",
+        )
+        try:
+            self.query(
+                host,
+                f"USE [{escaped}]; DBCC SHRINKFILE(2, 0)",
+            )
+        finally:
+            self.query(
+                host,
+                f"USE [master]; "
+                f"ALTER DATABASE [{escaped}] SET RECOVERY FULL",
+            )
+
     def test_connection(
         self,
         host: str,

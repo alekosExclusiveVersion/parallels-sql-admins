@@ -662,6 +662,47 @@ class MainWindow(QWidget):
         )
         self.db_op_thread.start()
 
+    def _shrink_log(self, server: str, database: str) -> None:
+        if not server or not database:
+            return
+
+        engine = registry.engine(server)
+        if engine != ENGINE_MSSQL:
+            return
+
+        if self.db_op_thread.isRunning():
+            self.status_bar.set_status("Операция уже выполняется…")
+            logger.warning(
+                f"Shrink log database {server}.{database} skipped: "
+                "db_op thread busy"
+            )
+            return
+
+        answer = CopyableMessageBox.warning(
+            self,
+            "Очистка журнала транзакций",
+            f"Очистить журнал транзакций БД «{database}» "
+            f"на сервере «{server}»?\n\n"
+            f"БД временно перейдёт в режим SIMPLE, журнал будет "
+            f"ужат, затем режим FULL будет восстановлен.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        self.append_log(
+            "INFO",
+            f"Очистка журнала транзакций БД «{database}» "
+            f"на сервере «{server}»…",
+        )
+        logger.action(f"Shrink log database: {server}.{database}")
+
+        self.db_op_worker.set_request(
+            server, database, DbOperation.SHRINK_LOG,
+        )
+        self.db_op_thread.start()
+
     def _attach_database(self, server: str) -> None:
         if not server:
             return
@@ -777,6 +818,14 @@ class MainWindow(QWidget):
                 )
                 logger.action(f"Database restored: {host}.{database}")
 
+            case DbOperation.SHRINK_LOG:
+                self.append_log(
+                    "SUCCESS",
+                    f"Журнал транзакций БД «{database}» на сервере "
+                    f"«{host}» очищен.",
+                )
+                logger.action(f"Log shrunk: {host}.{database}")
+
         self._sql_refresh_databases()
 
     def _db_op_error(self, message: str) -> None:
@@ -789,6 +838,7 @@ class MainWindow(QWidget):
             DbOperation.DETACH: "отсоединения",
             DbOperation.ATTACH: "присоединения",
             DbOperation.RESTORE: "восстановления",
+            DbOperation.SHRINK_LOG: "очистки журнала транзакций",
         }
         op_name = op_names.get(op, op)
 
@@ -1333,6 +1383,10 @@ class MainWindow(QWidget):
 
         self.servers_tree.detachDatabaseRequested.connect(
             self._detach_database
+        )
+
+        self.servers_tree.shrinkLogRequested.connect(
+            self._shrink_log
         )
 
         self.servers_tree.attachDatabaseRequested.connect(

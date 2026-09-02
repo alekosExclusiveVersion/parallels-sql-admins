@@ -75,6 +75,7 @@ class ServersTree(QTreeWidget):
     removeServerRequested = Signal(str)      # server
     dropDatabaseRequested = Signal(str, str)  # server, database
     detachDatabaseRequested = Signal(str, str)  # server, database
+    shrinkLogRequested = Signal(str, str)  # server, database
     attachDatabaseRequested = Signal(str)    # server
     restoreDatabaseRequested = Signal(str)   # server
 
@@ -573,6 +574,18 @@ class ServersTree(QTreeWidget):
                 action_detach.triggered.connect(
                     self._menu_trigger(
                         lambda: self.detachDatabaseRequested.emit(server, database)
+                    )
+                )
+
+                menu.addSeparator()
+
+                action_shrink = menu.addAction(
+                    icon("shrink", 16, "@icon_accent"),
+                    f"Очистить журнал транзакций (шринк) «{database}»",
+                )
+                action_shrink.triggered.connect(
+                    self._menu_trigger(
+                        lambda: self.shrinkLogRequested.emit(server, database)
                     )
                 )
 

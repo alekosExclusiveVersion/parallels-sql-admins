@@ -175,6 +175,14 @@ class TestMSSQLDDLRunsInMasterContext(unittest.TestCase):
         for sql in self.executions[-2:]:
             self.assertTrue(sql.lstrip().startswith("USE [master];"))
 
+    def test_shrink_log_simple_shrink_full_sequence(self):
+        self.client.shrink_log("srv", "mydb")
+
+        self.assertEqual(len(self.executions), 3)
+        self.assertIn("SET RECOVERY SIMPLE", self.executions[0])
+        self.assertIn("DBCC SHRINKFILE(2, 0)", self.executions[1])
+        self.assertIn("SET RECOVERY FULL", self.executions[2])
+
     def tearDown(self):
         self.client.close_all()
 
@@ -412,6 +420,18 @@ class TestDatabaseOperationWorker(unittest.TestCase):
         mock_client.restore_database.assert_called_once_with(
             "h1", "db1", r"C:\backups\db.bak", replace=True,
         )
+        self.assertTrue(self.finished)
+        self.assertTrue(self.succeeded)
+
+    @patch("backend.db_operation_worker.client_for")
+    def test_shrink_log_calls_shrink_log(self, mock_client_for):
+        mock_client = MagicMock()
+        mock_client_for.return_value = mock_client
+
+        self.worker.set_request("h1", "db1", DbOperation.SHRINK_LOG)
+        self.worker.run()
+
+        mock_client.shrink_log.assert_called_once_with("h1", "db1")
         self.assertTrue(self.finished)
         self.assertTrue(self.succeeded)
 
