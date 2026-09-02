@@ -398,8 +398,12 @@ class ServerRegistry:
 
         Возвращает (добавлено, обновлено, удалено).
         """
+        # Ключ — (host, port): один адрес может держать несколько серверов
+        # (например, разные порты/движки с собственными именами). Индексация
+        # по host без порта схлопывала их в одну запись и перезаписывала
+        # engine/port/name всех серверов на одном хосте одним значением.
         reference = {
-            spec.host: spec for spec in self._parse_reference()
+            spec.key(): spec for spec in self._parse_reference()
         }
 
         added = 0
@@ -409,7 +413,7 @@ class ServerRegistry:
 
         merged: list[ServerSpec] = []
         for spec in self._specs:
-            ref_spec = reference.get(spec.host)
+            ref_spec = reference.get(spec.key())
             if ref_spec is not None:
                 attrs = (spec.engine, spec.port, spec.name)
                 spec.engine = ref_spec.engine
@@ -444,8 +448,9 @@ class ServerRegistry:
 
             merged.append(spec)  # пользовательский сервер
 
-        for host, spec in reference.items():
-            if not any(existing.host == host for existing in merged):
+        merged_keys = {s.key() for s in merged}
+        for key, spec in reference.items():
+            if key not in merged_keys:
                 spec.ref = True
                 merged.append(spec)
                 added += 1

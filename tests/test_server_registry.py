@@ -276,6 +276,36 @@ class TestReferenceSync(unittest.TestCase):
             self.assertFalse(by_host["my-own.tradesoft.ru"].ref)
             self.assertIn("p7ru1.tradesoft.ru", by_host)
 
+    def test_same_host_different_ports_keep_own_names(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            reg = self._reg(
+                tmp,
+                [
+                    {"host": "192.168.128.160", "port": 1433,
+                     "engine": "mssql", "user": "", "password": "",
+                     "name": "TESTING26\\ALEKOS_SQL_2K19", "ref": True},
+                    {"host": "192.168.128.160", "port": 6346,
+                     "engine": "mssql", "user": "", "password": "",
+                     "name": "sql20k25", "ref": True},
+                ],
+                [
+                    {"host": "192.168.128.160", "port": 1433,
+                     "engine": "mssql", "name": "TESTING26\\ALEKOS_SQL_2K19"},
+                    {"host": "192.168.128.160", "port": 6346,
+                     "engine": "mssql", "name": "sql20k25"},
+                ],
+            )
+
+            specs = reg.load()
+
+            by_port = {s.port: s for s in specs if s.host == "192.168.128.160"}
+            self.assertEqual(len(by_port), 2)
+            self.assertEqual(by_port[1433].name, "TESTING26\\ALEKOS_SQL_2K19")
+            self.assertEqual(by_port[1433].engine, ENGINE_MSSQL)
+            self.assertEqual(by_port[6346].name, "sql20k25")
+            self.assertEqual(by_port[6346].engine, ENGINE_MSSQL)
+
     def test_updates_attributes_keeps_credentials(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
