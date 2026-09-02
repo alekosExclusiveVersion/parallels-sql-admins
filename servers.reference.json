@@ -1,5 +1,6 @@
 [
     {"host": "192.168.128.160", "engine": "mssql", "port": 1433, "name": "TESTING26\\ALEKOS_SQL_2K19"},
+    {"host": "192.168.128.160", "engine": "mssql", "port": 6346, "name": "sql20k25"},
     {"host": "aisql.tradesoft.corp\\supportsql", "engine": "mssql", "port": 1433, "name": "aisql"},
     {"host": "btk66-msk.tradesoft.ru", "engine": "mysql", "port": 3306, "name": ""},
     {"host": "eurotradeplus.tradesoft.ru", "engine": "mysql", "port": 3306, "name": ""},
