@@ -129,7 +129,7 @@ class TestReferenceMerge(unittest.TestCase):
             old = by_host["p7ru1.tradesoft.ru"]
             self.assertEqual(old.user, "koshkin")
             self.assertEqual(old.password, "secret")
-            self.assertEqual(old.name, "")  # атрибуты обновляются из эталона
+            self.assertEqual(old.name, "p7ru1")  # пользовательское имя сохраняется
             self.assertTrue(old.ref)
             custom = by_host["custom-only.tradesoft.ru"]
             self.assertEqual(custom.name, "Мой сервер")
@@ -324,10 +324,29 @@ class TestReferenceSync(unittest.TestCase):
             spec = specs[0]
             self.assertEqual(spec.engine, ENGINE_MSSQL)
             self.assertEqual(spec.port, 1433)
-            self.assertEqual(spec.name, "SQL Prod")
+            self.assertEqual(spec.name, "Старое имя")
             self.assertEqual(spec.user, "sa")
             self.assertEqual(spec.password, "pw")
             self.assertTrue(spec.ref)
+
+    def test_fills_empty_name_from_reference(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            reg = self._reg(
+                tmp,
+                [
+                    {"host": "sql-prod.tradesoft.ru", "port": 1433,
+                     "engine": "mssql", "user": "sa",
+                     "password": "pw", "name": "", "ref": True},
+                ],
+                REFERENCE,
+            )
+
+            specs = reg.load()
+
+            spec = specs[0]
+            self.assertEqual(spec.name, "SQL Prod")
+            self.assertEqual(spec.engine, ENGINE_MSSQL)
 
     def test_marks_unmarked_host_from_reference(self):
         with tempfile.TemporaryDirectory() as td:

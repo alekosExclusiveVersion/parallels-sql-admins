@@ -418,7 +418,8 @@ class ServerRegistry:
                 attrs = (spec.engine, spec.port, spec.name)
                 spec.engine = ref_spec.engine
                 spec.port = ref_spec.port
-                spec.name = ref_spec.name
+                if not spec.name or spec.name == ref_spec.name:
+                    spec.name = ref_spec.name
                 spec.ref = True
                 if (spec.engine, spec.port, spec.name) != attrs:
                     updated += 1
