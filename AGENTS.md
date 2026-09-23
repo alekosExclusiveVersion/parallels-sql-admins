@@ -77,36 +77,6 @@ Hints:
 - Domain for a database lives in that DB's `cfg_settings` table under key `csSiteDomain` (e.g. `www.autopolyus.ru`), not in Plesk `psa` (which does not exist on these hosts)
 - Domain lookup (`search_databases`): for name masks the site is filled from `cfg_settings.csSiteDomain` per DB; for domain masks (containing a dot) DBs are matched by the same key (only DBs passing the `database_prefix`/`exclude_database_regex`/`ignore` filters are scanned, then `UNION ALL` per 50 DBs)
 
-## Web-pricing monitoring (pricing_alert.py)
-
-Stands alerts for the web-pricing subsystem: queries Grafana/ClickHouse
-(`provider_logs`, `provider_runtime_logs`), compares the last `window_seconds`
-with the same window a day ago and, on anomaly, notifies macOS banner, the
-B24 chat and the Telegram room with Grafana dashboard links.
-
-- Run: `/opt/homebrew/bin/python3 pricing_alert.py`; thresholds in
-  `pricing_alert_config.json` (`increase_factor`, `runtime_abs_sec`,
-  `errors_abs_pct`, `volume_drop`, `escalate_every_hours`, `window_seconds`).
-- Triggers: provider avg runtime >= `runtime_abs_sec` and > `increase_factor`x
-  norm; error share (status >=500) >= `errors_abs_pct` and > `increase_factor`x
-  norm; request volume < `(1 - volume_drop)` of norm.
-- Dedup: notify on incident start, then every `escalate_every_hours` while it
-  lasts, and a recovery message when it clears. State in `logs/pricing_alert_state.json`.
-- On first incident notify `detect_pricing_degradation.py` runs once (phase 2,
-  MySQL scan) and lists up to 8 databases with "Превышено время ожидания"
-  (metric `timeouts`, `DELTA` = multiplier vs baseline).
-- Secrets come from macOS Keychain, never from the repo:
-  Grafana `opencode.grafana.login`/`opencode.grafana.password`; Telegram
-  `opencode.tg-alert-token`, `opencode.tg-alert-chat2` (supergroup
-  `-1001616129406`), `opencode.tg-alert-thread` (topic 4385); B24 uses the
-  ts-b24 webhook (no scope stored here).
-- Scheduled by LaunchAgent `com.tradesoft.pricing-alert` (every 15 min,
-  StartInterval 900); logs in `logs/pricing_alert.log`.
-- Message layout: header with MSK time range, "Итог…" summary line with
-  human-readable multipliers (×N = times slower than the day-ago norm),
-  per-provider slow/error lists, top timeout databases, then links to Grafana
-  panels 25 (runtime) and 27 (error %).
-
 ## Code Style
 
 - No comments unless asked
