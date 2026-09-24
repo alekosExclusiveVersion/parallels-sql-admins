@@ -13,12 +13,26 @@ SERVER | DATABASE | COUNTRY | TARGET_VALUE
 from __future__ import annotations
 
 import csv
+from pathlib import Path
+
+import common.config as C
+
+APP = Path.home() / "Library/Application Support/Parallels SQL Admin"
+
+if (APP / "config.ini").exists():
+    cfg = C.load_config(APP / "config.ini")
+    object.__setattr__(cfg.advanced, "servers_file", str(APP / "servers.json"))
+    C.config = cfg
 
 from common.config import config
 from common.logger import logger
 from common.mysql_client import mysql
+from common.server_registry import ENGINE_MYSQL
 from common.worker import worker_pool
 from backend.repository import Repository
+
+
+_RU_COUNTRIES = {"russia", "ru", "россия"}
 
 
 def process_server(server: str):
@@ -52,7 +66,7 @@ def process_server(server: str):
 
         country = (item.get("country") or "").lower()
 
-        if country != config.filter.country:
+        if country not in _RU_COUNTRIES:
             continue
 
         rows.append(
@@ -60,7 +74,7 @@ def process_server(server: str):
                 "server": server,
                 "database": db,
                 "country": country,
-                "value": item.get("target_value", ""),
+                "value": item.get("target_value") or "",
             }
         )
 
@@ -108,9 +122,11 @@ def save_csv(data: list[dict]) -> None:
 
 def main():
 
-    servers = Repository().load_servers()
+    specs = Repository().load_servers()
 
-    logger.info(f"Серверов: {len(servers)}")
+    servers = [s.host for s in specs if s.engine == ENGINE_MYSQL and s.host]
+
+    logger.info(f"MySQL серверов: {len(servers)}")
 
     results = worker_pool.run(
         servers,

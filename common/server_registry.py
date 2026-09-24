@@ -472,7 +472,7 @@ class ServerRegistry:
         Используется как запасной вариант, если эталона
         servers.reference.json нет.
         """
-        txt = Path(config.advanced.servers_file).with_suffix(".txt")
+        txt = self.servers_file.with_suffix(".txt")
         servers_txt = txt if txt.exists() else self.servers_file.with_name("servers.txt")
 
         if not servers_txt.exists():
