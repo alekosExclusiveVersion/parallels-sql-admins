@@ -244,6 +244,21 @@ class TestServersTree(unittest.TestCase):
         self.assertEqual(srv.child(0).childCount(), 1)
         self.assertEqual(srv.child(0).child(0).text(0), "…")
 
+    def test_apply_sizes_shows_zero_for_empty_database(self):
+        tree = ServersTree()
+        tree.set_servers(["srv1"])
+        tree.apply_databases("srv1", ["ar_empty", "ar_full"])
+        tree.apply_sizes("srv1", {"ar_full": 2048})
+
+        srv = tree.topLevelItem(0)
+        texts = {
+            tree.db_name(srv.child(i)): srv.child(i).text(0)
+            for i in range(srv.childCount())
+        }
+
+        self.assertEqual(texts["ar_full"], "ar_full  (2.0 KB)")
+        self.assertEqual(texts["ar_empty"], "ar_empty  (0.0 B)")
+
     def test_db_node_carries_its_server_key(self):
         """Регрессия: узел БД хранит host-ключ сервера в _SERVER_ROLE,
         поэтому контекстное меню (drop/detach) разрешает сервер из самого

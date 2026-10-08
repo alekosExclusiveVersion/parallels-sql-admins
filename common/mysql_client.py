@@ -174,11 +174,6 @@ class MySQLClient:
         conn = self._pool.acquire(host, database)
 
         try:
-            try:
-                with conn.cursor() as cur:
-                    cur.execute("SET SESSION sql_select_limit = 1000")
-            except Exception:
-                pass
             yield conn
         finally:
             self._pool.release(host, database, conn)

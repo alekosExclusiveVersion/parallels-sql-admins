@@ -371,12 +371,18 @@ class ServersTree(QTreeWidget):
                 db_item = server_item.child(db_index)
                 db = self.db_name(db_item)
 
-                if not db or db not in sizes:
+                if not db:
+                    continue
+                if db in sizes:
+                    size = sizes[db]
+                elif self.db_server_name(db_item):
+                    size = 0
+                else:
                     continue
 
                 db_item.setText(
                     0,
-                    f"{db}  ({self.format_size(sizes[db])})",
+                    f"{db}  ({self.format_size(size)})",
                 )
             break
 
