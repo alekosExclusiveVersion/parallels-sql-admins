@@ -4,6 +4,7 @@ tests/test_drop_database.py
 Тесты фичи удаления БД:
   - MSSQLClient.drop_database: SET SINGLE_USER + DROP DATABASE
   - PgSQLClient.drop_database: pg_terminate_backend + DROP DATABASE
+  - PgsqlClient.list_databases: без MySQL-префикса ar_ (консоль видит все БД)
   - ServersTree.remove_database: удаление узла БД из дерева
   - Контекстное меню: пункт «Удалить БД» только для MSSQL/PGSQL
   - DatabaseOperationWorker: dispatch для DbOperation.DROP
@@ -215,6 +216,31 @@ class TestPgsqlDropDatabase(unittest.TestCase):
 
         sqls = [e[0] for e in self.conn.executions]
         self.assertTrue(any('DROP DATABASE "mydb"' in s for s in sqls))
+
+
+# ----------------------------------------------------------
+# PgsqlClient.list_databases
+# ----------------------------------------------------------
+
+class TestPgsqlListDatabases(unittest.TestCase):
+
+    def setUp(self):
+        self.client = PgsqlClient(cfg=_FakeConfig())
+        self.conn = _FakePgsqlConn()
+        self.client._pool.acquire = MagicMock(return_value=self.conn)
+        self.client._pool.release = MagicMock()
+
+    def test_list_databases_ignores_mysql_prefix(self):
+        self.conn.result = [
+            {"db": "activauto"},
+            {"db": "ar_shop"},
+            {"db": "juravlev"},
+            {"db": None},
+        ]
+
+        names = self.client.list_databases("srv")
+
+        self.assertEqual(names, ["activauto", "ar_shop", "juravlev"])
 
 
 # ----------------------------------------------------------

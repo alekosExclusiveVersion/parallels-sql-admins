@@ -23,7 +23,6 @@ description/fetchmany/rowcount.
 from __future__ import annotations
 
 import atexit
-import re
 import threading
 from contextlib import contextmanager
 from typing import Any
@@ -210,6 +209,10 @@ class PgsqlClient:
         return f"datname NOT IN ({system})"
 
     def list_databases_conn(self, conn) -> list[str]:
+        # Префикс database_prefix (например 'ar_') и exclude_database_regex —
+        # MySQL-конвенция именования; для PgSQL не применяются, иначе список
+        # БД в SQL-консоли оказывается пустым. Исключаются только системные
+        # и ignore_databases (фильтр на уровне SQL выше).
         rows = self.execute_on_connection(
             conn,
             "SELECT datname AS db "
@@ -218,21 +221,14 @@ class PgsqlClient:
             "ORDER BY datname",
         )
 
-        prefix = config.filter.database_prefix
-        pattern = config.filter.exclude_database_regex
-
         return [
             row["db"]
             for row in rows
-            if (
-                row.get("db")
-                and row["db"].startswith(prefix)
-                and not re.search(pattern, row["db"])
-            )
+            if row.get("db")
         ]
 
     def list_databases(self, host: str) -> list[str]:
-        """Список БД на сервере с учётом фильтров (prefix/regex/ignore)."""
+        """Все БД сервера (кроме системных и ignore_databases)."""
         with self.connect(host) as conn:
             return self.list_databases_conn(conn)
 
