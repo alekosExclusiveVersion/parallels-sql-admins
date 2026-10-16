@@ -2056,6 +2056,13 @@ class MainWindow(QWidget):
             f"Выполнение ({index}/{total}) {host}.{database}"
         )
 
+    def _sql_single_target(self) -> bool:
+        req = self._last_sql_request
+        if req is None:
+            return False
+        targets = req[0]
+        return len(targets) == 1 and targets[0][1] != ALL_DATABASES
+
     def _sql_target_result(
         self,
         host,
@@ -2071,6 +2078,7 @@ class MainWindow(QWidget):
             rows,
             columns,
             message,
+            show_source=not self._sql_single_target(),
         )
 
         self.append_log(
@@ -2091,6 +2099,7 @@ class MainWindow(QWidget):
             [],
             [],
             f"ERROR: {message}",
+            show_source=not self._sql_single_target(),
         )
 
     def _sql_target_stopped(self, done, total):
