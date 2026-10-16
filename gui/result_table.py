@@ -201,6 +201,7 @@ class ResultTable(QTableWidget):
         self._only_errors: QCheckBox | None = None
         self._working_only: QCheckBox | None = None
         self._results_source: str | None = None
+        self._source_offset = 3
 
         # Множество редактируемых колонок данных (>= 3); None — редактирование
         # выключено (check/search результаты, мульти-скоуп, несложный SELECT).
@@ -294,6 +295,10 @@ class ResultTable(QTableWidget):
     def results_source(self) -> str | None:
         return self._results_source
 
+    @property
+    def source_offset(self) -> int:
+        return self._source_offset
+
     @results_source.setter
     def results_source(self, value: str | None) -> None:
         self._results_source = value
@@ -327,6 +332,7 @@ class ResultTable(QTableWidget):
         self.setRowCount(0)
         self.setSortingEnabled(False)
         self.results_source = None
+        self._source_offset = 3
         self.set_editing_context(None)
         self._clear_column_filters()
 
@@ -429,20 +435,35 @@ class ResultTable(QTableWidget):
         rows: list,
         columns: list,
         message: str,
+        show_source: bool = True,
     ) -> None:
+        self._source_offset = 3 if show_source else 0
         if self.columnCount() == 0:
-            labels = (
-                ["Source", "Server", "Database"] + list(columns)
-                if columns
-                else ["Source", "Server", "Database", "Result"]
+            if columns:
+                labels = (
+                    ["Source", "Server", "Database"] + list(columns)
+                    if show_source
+                    else list(columns)
+                )
+            else:
+                labels = (
+                    ["Source", "Server", "Database", "Result"]
+                    if show_source
+                    else ["Result"]
+                )
+            self.setup_columns(
+                labels, {0: 64, 1: 190, 2: 160} if show_source else {}
             )
-            self.setup_columns(labels, {0: 64, 1: 190, 2: 160})
 
         if not columns:
             rows = [[message]]
 
         for row in rows:
-            display = ["SQL", host, database] + list(row)
+            display = (
+                ["SQL", host, database] + list(row)
+                if show_source
+                else list(row)
+            )
             self.add_row(display[: self.columnCount()])
 
     def setup_columns(self, labels: list[str], fixed_widths: dict[int, int]) -> None:
@@ -484,7 +505,7 @@ class ResultTable(QTableWidget):
             item.setData(SOURCE_ROW_ROLE, row)
 
             flags = item.flags() & ~Qt.ItemIsEditable
-            if col >= 3:
+            if col >= self._source_offset:
                 flags |= Qt.ItemIsEditable
             item.setFlags(flags)
 
@@ -783,6 +804,8 @@ class ResultTable(QTableWidget):
         copy_row = menu.addAction("Копировать строку")
         copy_server = menu.addAction("Копировать сервер")
         copy_database = menu.addAction("Копировать БД")
+        copy_server.setVisible(self.column_index("Server") is not None)
+        copy_database.setVisible(self.column_index("Database") is not None)
 
         menu.addSeparator()
 
@@ -862,7 +885,7 @@ class ResultTable(QTableWidget):
         QApplication.clipboard().setText(item.text() if item else "")
 
     def _table_double_click(self, item: QTableWidgetItem) -> None:
-        if item.column() >= 3:
+        if item.column() >= self._source_offset:
             # Двойной клик по ячейке данных — редактирование, а не переход.
             return
 

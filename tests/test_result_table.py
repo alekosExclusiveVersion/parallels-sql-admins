@@ -262,5 +262,55 @@ class TestEmptyFilterNulls(unittest.TestCase):
         self.assertEqual(visible, [1])
 
 
+class TestSqlResultSourceColumns(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _headers(self, table):
+        return [
+            table.horizontalHeaderItem(i).text()
+            for i in range(table.columnCount())
+        ]
+
+    def test_mass_result_keeps_source_columns(self):
+        table = ResultTable()
+        table.fill_sql_result("h", "db", [["a", "b"]], ["c1", "c2"], "ok")
+        self.assertEqual(table.source_offset, 3)
+        self.assertEqual(
+            self._headers(table),
+            ["Source", "Server", "Database", "c1", "c2"],
+        )
+        self.assertEqual(table.item(0, 0).text(), "SQL")
+        self.assertEqual(table.item(0, 1).text(), "h")
+        self.assertEqual(table.item(0, 2).text(), "db")
+        self.assertEqual(table.item(0, 3).text(), "a")
+
+    def test_single_result_hides_source_columns(self):
+        table = ResultTable()
+        table.fill_sql_result(
+            "h", "db", [["a", "b"]], ["c1", "c2"], "ok",
+            show_source=False,
+        )
+        self.assertEqual(table.source_offset, 0)
+        self.assertEqual(self._headers(table), ["c1", "c2"])
+        self.assertEqual(table.item(0, 0).text(), "a")
+        self.assertEqual(table.item(0, 1).text(), "b")
+        self.assertIsNone(table.column_index("Server"))
+        self.assertIsNone(table.column_index("Database"))
+
+    def test_single_result_message_only(self):
+        table = ResultTable()
+        table.fill_sql_result("h", "db", [], [], "1 row", show_source=False)
+        self.assertEqual(self._headers(table), ["Result"])
+        self.assertEqual(table.item(0, 0).text(), "1 row")
+
+    def test_reset_restores_source_offset(self):
+        table = ResultTable()
+        table.fill_sql_result("h", "db", [], [], "x", show_source=False)
+        table.reset_table()
+        self.assertEqual(table.source_offset, 3)
+
+
 if __name__ == "__main__":
     unittest.main()

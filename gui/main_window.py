@@ -2117,6 +2117,7 @@ class MainWindow(QWidget):
             rows,
             columns,
             message,
+            show_source=False,
         )
 
         self.status_bar.set_status(message)
@@ -2175,9 +2176,10 @@ class MainWindow(QWidget):
 
         result_columns = self._table_result_columns()
         lower_result = {name.lower(): name for name in result_columns}
+        off = self.table.source_offset
 
         editable = {
-            3 + i
+            off + i
             for i, name in enumerate(result_columns)
             if name.lower() in {col.lower() for col in ctx["columns"]}
         }
@@ -2193,7 +2195,9 @@ class MainWindow(QWidget):
             self.table.horizontalHeaderItem(col).text()
             if self.table.horizontalHeaderItem(col) is not None
             else ""
-            for col in range(3, self.table.columnCount())
+            for col in range(
+                self.table.source_offset, self.table.columnCount()
+            )
         ]
 
     def _update_edit_buttons(self) -> None:
@@ -2256,7 +2260,8 @@ class MainWindow(QWidget):
     def _apply_cell_edit(self, row, col, new_text, old_text) -> None:
 
         ctx = self._sql_edit_ctx
-        if ctx is None or col < 3:
+        off = self.table.source_offset
+        if ctx is None or col < off:
             return
 
         if self.query_thread.isRunning():
@@ -2266,10 +2271,10 @@ class MainWindow(QWidget):
             return
 
         result_columns = self._table_result_columns()
-        if col - 3 >= len(result_columns):
+        if col - off >= len(result_columns):
             return
 
-        column_name = result_columns[col - 3]
+        column_name = result_columns[col - off]
         lower_result = {name.lower(): name for name in result_columns}
 
         if column_name.lower() not in {
@@ -2282,7 +2287,7 @@ class MainWindow(QWidget):
             pk_name = lower_result.get(pk_col.lower())
             if pk_name is None:
                 return
-            pk_index = result_columns.index(pk_name) + 3
+            pk_index = result_columns.index(pk_name) + off
             pk_item = self.table.item(row, pk_index)
             pk_text = pk_item.text() if pk_item is not None else ""
             if pk_text == "Null":
