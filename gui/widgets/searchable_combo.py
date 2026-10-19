@@ -115,7 +115,6 @@ class SearchableComboBox(QComboBox):
         self._completer = SearchComboCompleter(self)
         self.setCompleter(self._completer)
         self._completer.activated.connect(self._on_activated)
-        self._completer.popup().clicked.connect(self._on_popup_clicked)
         self.lineEdit().textChanged.connect(self._on_text_changed)
         self.lineEdit().installEventFilter(self)
         # eventFilter на попапе: перехват Enter/Escape/DOWN/UP
@@ -244,7 +243,15 @@ class SearchableComboBox(QComboBox):
         self.setCurrentText(text)
         self._completer.popup().hide()
 
-    def _on_popup_clicked(self, index) -> None:
-        text = index.data(Qt.DisplayRole)
-        if text:
-            self._on_activated(str(text))
+    def showPopup(self) -> None:  # noqa: N802
+        """Клик по стрелке открывает наш попап, а не нативный список.
+
+        Нативный QComboBox-список не умеет искать по вхождению и не
+        показывает иконки пунктов, поэтому клик в любом месте поля ведёт
+        в тот же попап, что и ввод текста.
+        """
+        if not self.count():
+            return
+        self._popup_manual = True
+        self._completer.refresh(self._combo_items(), "", self._item_icon_name)
+        QTimer.singleShot(0, self._completer.complete)
