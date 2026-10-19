@@ -72,6 +72,7 @@ class ServersTree(QTreeWidget):
     selectionChangedNotify = Signal()
     addServerRequested = Signal()
     editServerRequested = Signal(str)        # server
+    credentialsRequested = Signal(str)       # server
     removeServerRequested = Signal(str)      # server
     dropDatabaseRequested = Signal(str, str)  # server, database
     detachDatabaseRequested = Signal(str, str)  # server, database
@@ -506,9 +507,13 @@ class ServersTree(QTreeWidget):
 
     def _context_menu(self, pos) -> None:
         """Контекстное меню: добавить/редактировать/удалить сервер."""
-        menu = QMenu(self)
+        menu = self._build_context_menu(self.itemAt(pos))
 
-        item = self.itemAt(pos)
+        menu.exec(self.viewport().mapToGlobal(pos))
+
+    def _build_context_menu(self, item) -> QMenu:
+        """Собирает контекстное меню для узла дерева (без показа)."""
+        menu = QMenu(self)
 
         action_add = menu.addAction(icon("add", 16, "@icon_accent"), "Добавить сервер")
         action_add.triggered.connect(self.addServerRequested)
@@ -525,6 +530,17 @@ class ServersTree(QTreeWidget):
             action_edit.triggered.connect(
                 self._menu_trigger(lambda: self.editServerRequested.emit(server))
             )
+
+            if engine != ENGINE_SQLITE:
+                action_credentials = menu.addAction(
+                    icon("lock", 16, "@icon_muted"),
+                    "Учётные данные…",
+                )
+                action_credentials.triggered.connect(
+                    self._menu_trigger(
+                        lambda: self.credentialsRequested.emit(server)
+                    )
+                )
 
             action_remove = menu.addAction(
                 icon("delete_outline", 16, "@icon_danger"),
@@ -595,7 +611,7 @@ class ServersTree(QTreeWidget):
                     )
                 )
 
-        menu.exec(self.viewport().mapToGlobal(pos))
+        return menu
 
     @staticmethod
     def _menu_trigger(handler):

@@ -478,6 +478,15 @@ class MainWindow(QWidget):
         if not host_key or not registry.needs_credentials(host_key):
             return True
 
+        return self._prompt_credentials(host_key, message)
+
+    def _prompt_credentials(self, host_key: str, message: str = "") -> bool:
+        """Показывает диалог реквизитов и сохраняет введённое."""
+        host_key = (host_key or "").strip()
+
+        if not host_key:
+            return False
+
         spec = registry.find(host_key)
         user = spec.user if spec is not None else ""
 
@@ -518,6 +527,20 @@ class MainWindow(QWidget):
             f"{'сохранены' if saved else 'приняты до перезапуска'}.",
         )
         return True
+
+    def _edit_server_credentials(self, host_key: str) -> None:
+        """Ввод/замена реквизитов сервера из контекстного меню."""
+        host_key = (host_key or "").strip()
+
+        if not host_key:
+            return
+
+        spec = registry.find(host_key)
+
+        if spec is None or spec.engine == ENGINE_SQLITE:
+            return
+
+        self._prompt_credentials(host_key)
 
     def _skip_servers_without_credentials(
         self, hosts: list[str], action: str,
@@ -1550,6 +1573,10 @@ class MainWindow(QWidget):
 
         self.servers_tree.editServerRequested.connect(
             self._edit_server
+        )
+
+        self.servers_tree.credentialsRequested.connect(
+            self._edit_server_credentials
         )
 
         self.servers_tree.removeServerRequested.connect(

@@ -12,8 +12,12 @@ tests/test_credentials_flow.py
 """
 
 import json
+import os
 import tempfile
 import unittest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -401,9 +405,10 @@ class _StatusBar:
 
 
 class _FakeSpec:
-    def __init__(self, label):
+    def __init__(self, label, engine="mysql"):
         self.label = label
         self.user = ""
+        self.engine = engine
 
     def display_name(self):
         return self.label
@@ -484,6 +489,12 @@ class TestMainWindowCredentials(unittest.TestCase):
             mw.MainWindow._skip_servers_without_credentials.__get__(
                 self.window,
             )
+        )
+        self.window._prompt_credentials = (
+            mw.MainWindow._prompt_credentials.__get__(self.window)
+        )
+        self.window._edit_server_credentials = (
+            mw.MainWindow._edit_server_credentials.__get__(self.window)
         )
 
     def _patch(self, needs=(), spec=None):
@@ -601,6 +612,111 @@ class TestMainWindowCredentials(unittest.TestCase):
 
         self.assertFalse(result)
         self.assertTrue(self.window._cred_retry_done)
+
+    def test_prompt_keeps_credentials_when_vault_locked(self):
+        ctx, registry = self._patch(needs={"a:3306"})
+        self.window.vault_writable = False
+
+        with ctx, patch.object(
+            self.mw, "CredentialsDialog", _FakeDialog,
+        ), patch.object(self.mw, "reset_connections"):
+            result = self.mw.MainWindow._prompt_credentials(
+                self.window, "a:3306",
+            )
+
+        self.assertTrue(result)
+        self.assertEqual(
+            registry.saved, [("a:3306", "alice", "secret", False)],
+        )
+
+    def test_edit_server_credentials_prompts_always(self):
+        ctx, registry = self._patch(
+            needs=(), spec=_FakeSpec("DB1 (a:3306)"),
+        )
+
+        with ctx, patch.object(
+            self.mw, "CredentialsDialog", _FakeDialog,
+        ), patch.object(self.mw, "reset_connections"):
+            self.mw.MainWindow._edit_server_credentials(
+                self.window, "a:3306",
+            )
+
+        self.assertEqual(
+            registry.saved, [("a:3306", "alice", "secret", True)],
+        )
+
+    def test_edit_server_credentials_ignores_unknown_host(self):
+        ctx, registry = self._patch(needs=(), spec=None)
+
+        with ctx, patch.object(self.mw, "CredentialsDialog") as dialog:
+            self.mw.MainWindow._edit_server_credentials(
+                self.window, "a:3306",
+            )
+
+        dialog.assert_not_called()
+        self.assertEqual(registry.saved, [])
+
+    def test_edit_server_credentials_ignores_sqlite(self):
+        spec = _FakeSpec("Local", engine="sqlite")
+        ctx, registry = self._patch(needs=(), spec=spec)
+
+        with ctx, patch.object(self.mw, "CredentialsDialog") as dialog:
+            self.mw.MainWindow._edit_server_credentials(
+                self.window, "a:0",
+            )
+
+        dialog.assert_not_called()
+        self.assertEqual(registry.saved, [])
+
+
+class TestCredentialsMenu(unittest.TestCase):
+    """Пункт «Учётные данные…» в контекстном меню дерева серверов."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+
+        cls._app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        from gui.servers_tree import ServersTree
+
+        self.tree = ServersTree()
+        self.addCleanup(self.tree.deleteLater)
+        self.addCleanup(self.tree.close)
+
+    def _menu_actions(self, item, engine="mysql"):
+        with patch("gui.servers_tree.registry") as reg:
+            reg.engine.return_value = engine
+            return self.tree._build_context_menu(item).actions()
+
+    def test_credentials_action_present_and_emits_server(self):
+        self.tree.set_servers([("DB1", "h1:3306", "mysql")])
+        item = self.tree.topLevelItem(0)
+
+        actions = self._menu_actions(item)
+        matched = [
+            a for a in actions if a.text() == "Учётные данные…"
+        ]
+
+        self.assertEqual(len(matched), 1)
+
+        received = []
+        self.tree.credentialsRequested.connect(received.append)
+        matched[0].trigger()
+
+        self.assertEqual(received, ["h1:3306"])
+
+    def test_credentials_action_hidden_for_sqlite(self):
+        self.tree.set_servers([("Local", "local.db", "sqlite")])
+        item = self.tree.topLevelItem(0)
+
+        texts = [
+            a.text() for a in self._menu_actions(item, engine="sqlite")
+        ]
+
+        self.assertNotIn("Учётные данные…", texts)
+        self.assertIn("Добавить сервер", texts)
 
 
 if __name__ == "__main__":
