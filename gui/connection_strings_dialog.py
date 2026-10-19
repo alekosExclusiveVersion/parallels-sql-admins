@@ -24,6 +24,7 @@ gui/connection_strings_dialog.py
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -306,7 +307,12 @@ class ConnectionStringsDialog(QDialog):
         text = self.ed_export.toPlainText().strip()
 
         try:
-            Path(path).write_text(text + ("\n" if text else ""), encoding="utf-8")
+            target = Path(path)
+            target.write_text(text + ("\n" if text else ""), encoding="utf-8")
+            # Файл содержит пароли в открытом виде — закрываем доступ
+            # остальным пользователям системы.
+            if os.name != "nt":
+                target.chmod(0o600)
         except OSError as ex:
             CopyableMessageBox.warning(self, "Экспорт", f"Не удалось сохранить файл: {ex}")
             return
