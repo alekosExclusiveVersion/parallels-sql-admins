@@ -21,7 +21,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeyEvent
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog
 
 from gui.sql_console import SqlConsolePanel
 
@@ -238,13 +238,10 @@ class TestSqlEditorEscape(unittest.TestCase):
 
         self.assertEqual(len(stop_signals), 1)
 
-    def test_escape_inside_popup_hides_popup_no_stop(self):
-        stop_signals = []
-        self.panel.stopRequested.connect(lambda: stop_signals.append(True))
-
+    def test_short_prefix_shows_no_popup(self):
+        """Префикс из 1 символа: подсказки не показываются (min_len=2)."""
         completer = self.panel.editor._completer
-        if completer is None:
-            self.skipTest("no completer set")
+        self.assertIsNotNone(completer, "комплитер не установлен в редакторе")
         completer.set_catalog(["users", "orders"], {"users": ["id"]})
 
         self.panel.editor.setPlainText("u")
@@ -253,12 +250,33 @@ class TestSqlEditorEscape(unittest.TestCase):
         ).analyze("u", 1)
         completer.show_suggestions(context)
 
-        popup = completer.popup()
-        if not popup.isVisible():
-            self.skipTest("popup did not show")
+        self.assertEqual(completer._model.rowCount(), 0)
+        self.assertFalse(completer.popup().isVisible())
 
+    def test_escape_inside_popup_hides_popup_no_stop(self):
+        stop_signals = []
+        self.panel.stopRequested.connect(lambda: stop_signals.append(True))
+
+        completer = self.panel.editor._completer
+        self.assertIsNotNone(completer, "комплитер не установлен в редакторе")
+        completer.set_catalog(["users", "orders"], {"users": ["id"]})
+
+        self.panel.editor.setPlainText("us")
+        context = __import__(
+            "common.sql_completion", fromlist=["analyze"]
+        ).analyze("us", 2)
+        completer.show_suggestions(context)
+
+        self.assertGreater(
+            completer._model.rowCount(), 0, "подсказки не построены"
+        )
+        popup = completer.popup()
+        self.assertTrue(popup.isVisible(), "попап подсказок не отобразился")
+
+        # Must go through sendEvent: the event filter on the popup only runs
+        # for events delivered to it, not for a direct keyPressEvent call.
         event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)
-        popup.keyPressEvent(event)
+        QApplication.sendEvent(popup, event)
 
         self.assertFalse(popup.isVisible())
         self.assertEqual(len(stop_signals), 0)
@@ -269,19 +287,20 @@ class TestSqlEditorEscape(unittest.TestCase):
         self.panel.stopRequested.connect(lambda: stop_signals.append(True))
 
         completer = self.panel.editor._completer
-        if completer is None:
-            self.skipTest("no completer set")
+        self.assertIsNotNone(completer, "комплитер не установлен в редакторе")
         completer.set_catalog(["users", "orders"], {"users": ["id"]})
 
-        self.panel.editor.setPlainText("u")
+        self.panel.editor.setPlainText("us")
         context = __import__(
             "common.sql_completion", fromlist=["analyze"]
-        ).analyze("u", 1)
+        ).analyze("us", 2)
         completer.show_suggestions(context)
 
+        self.assertGreater(
+            completer._model.rowCount(), 0, "подсказки не построены"
+        )
         popup = completer.popup()
-        if not popup.isVisible():
-            self.skipTest("popup did not show")
+        self.assertTrue(popup.isVisible(), "попап подсказок не отобразился")
 
         # Send ESC to editor (not popup) — eventFilter should intercept it
         # because obj is self and popup is visible.
@@ -297,31 +316,30 @@ class TestSqlEditorEscape(unittest.TestCase):
         self.panel.stopRequested.connect(lambda: stop_signals.append(True))
 
         completer = self.panel.editor._completer
-        if completer is None:
-            self.skipTest("no completer set")
+        self.assertIsNotNone(completer, "комплитер не установлен в редакторе")
         completer.set_catalog(["users"], {"users": ["id"]})
-        self.panel.editor.setPlainText("u")
+        self.panel.editor.setPlainText("us")
         ctx = __import__(
             "common.sql_completion", fromlist=["analyze"]
-        ).analyze("u", 1)
+        ).analyze("us", 2)
         completer.show_suggestions(ctx)
 
+        self.assertGreater(
+            completer._model.rowCount(), 0, "подсказки не построены"
+        )
         popup = completer.popup()
-        if not popup.isVisible():
-            self.skipTest("popup did not show")
+        self.assertTrue(popup.isVisible(), "попап подсказок не отобразился")
 
-        # Create a QMessageBox — it should NOT be affected by our eventFilter
-        dlg = QMessageBox()
-        dlg.setText("Test dialog")
+        # ESC in the dialog is handled by the dialog itself (it closes); our
+        # app-level eventFilter must not intercept it or emit stopRequested.
+        dlg = QDialog()
         dlg.show()
 
         event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)
         QApplication.sendEvent(dlg, event)
 
-        # Popup stays visible — dialog ESC handled by dialog, not our filter
-        self.assertTrue(popup.isVisible())
+        self.assertFalse(dlg.isVisible())
         self.assertEqual(len(stop_signals), 0)
-        dlg.close()
 
     def test_double_set_completer_no_duplicate_connection(self):
         """Двойной set_completer — предыдущий completer отключается корректно."""
