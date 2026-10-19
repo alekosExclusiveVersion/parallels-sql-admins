@@ -45,13 +45,14 @@ def traced_connect(*args, **kwargs):
     _calls.append(
         {
             "host": kwargs.get("host"),
-            "user": kwargs.get("user"),
+            "user": "<SET>" if kwargs.get("user") else "<EMPTY>",
             "has_password": has_pwd,
             "database": kwargs.get("database"),
         }
     )
     print(
-        f"[connect] host={kwargs.get('host')} user={kwargs.get('user')} "
+        f"[connect] host={kwargs.get('host')} "
+        f"user={'<SET>' if kwargs.get('user') else '<EMPTY>'} "
         f"password={'<SET>' if has_pwd else '<EMPTY>'} db={kwargs.get('database')}",
         flush=True,
     )
@@ -76,7 +77,9 @@ w.worker.status.connect(lambda s: print("SIGNAL status:", s, flush=True))
 
 def check_session(tag):
     print(
-        f"[session:{tag}] user={session.user!r} password={session.password!r}",
+        f"[session:{tag}] "
+        f"user={'<SET>' if session.user else '<EMPTY>'} "
+        f"password={'<SET>' if session.password else '<EMPTY>'}",
         flush=True,
     )
 
