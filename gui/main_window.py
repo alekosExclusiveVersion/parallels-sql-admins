@@ -156,6 +156,7 @@ class MainWindow(QWidget):
 
         self._ensure_vault_at_startup()
         self._load_servers()
+        self._update_completion_scripts()
 
     # ----------------------------------------------------------
     # Backend
@@ -1476,6 +1477,10 @@ class MainWindow(QWidget):
         )
 
         self.panel.scriptInsertFromEditor.connect(
+            self._script_insert_to_console
+        )
+
+        self.panel.scriptPickRequested.connect(
             self._script_insert_to_console
         )
 
