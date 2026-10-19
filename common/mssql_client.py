@@ -160,6 +160,10 @@ class MSSQLClient:
             self._meta.clear()
         self._pool.close_all()
 
+    def close_host(self, host: str) -> int:
+        """Сбрасывает соединения всех баз хоста (смена реквизитов)."""
+        return self._pool.close_host(host)
+
     @contextmanager
     def connect(self, host: str, database: str | None = None):
         conn = self._pool.acquire(host, database)

@@ -652,6 +652,53 @@ class ServerRegistry:
     def engine_is_mssql(self, host_key: str) -> bool:
         return self.engine(host_key) == ENGINE_MSSQL
 
+    def needs_credentials(self, host_key: str) -> bool:
+        """True, если для подключения не хватает логина или пароля.
+
+        Учитывает fallback на глобальные реквизиты config.ini: если они
+        заполнены полностью, запрос не нужен.
+        """
+        spec = self.find(host_key)
+
+        if spec is None or spec.engine == ENGINE_SQLITE:
+            return False
+
+        user, password, _, _ = self.credentials_for(host_key)
+
+        return not (user or "").strip() or not (password or "").strip()
+
+    def set_credentials(
+        self,
+        host_key: str,
+        user: str,
+        password: str,
+        persist: bool = True,
+    ) -> bool:
+        """Обновляет реквизиты сервера.
+
+        Возвращает True, если реквизиты записаны в servers.json (для этого
+        хранилище должно быть разблокировано). При persist=False или
+        заблокированном хранилище реквизиты живут только в памяти.
+        """
+        spec = self.find(host_key)
+
+        if spec is None:
+            return False
+
+        spec.user = user
+        spec.password = password
+
+        if not persist or not self.vault.unlocked:
+            return False
+
+        with self._lock:
+            try:
+                self.save(self.load())
+            except (OSError, ValueError, VaultError):
+                return False
+
+        return True
+
     # ----------------------------------------------------------
     # Мутации
     # ----------------------------------------------------------
@@ -716,6 +763,23 @@ def client_for(host_key: str):
     from common.mysql_client import mysql
 
     return mysql
+
+
+def reset_connections(host_key: str) -> int:
+    """Сбрасывает пул соединений хоста после смены реквизитов."""
+    try:
+        client = client_for(host_key)
+        closer = getattr(client, "close_host", None)
+    except Exception:
+        return 0
+
+    if closer is None:
+        return 0
+
+    try:
+        return int(closer(host_key) or 0)
+    except Exception:
+        return 0
 
 
 def quote_ident(engine: str, name: str) -> str:
