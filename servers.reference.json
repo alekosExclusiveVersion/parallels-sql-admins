@@ -16,6 +16,7 @@
     {"host": "p7ru4.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru4"},
     {"host": "p7ru5.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru5"},
     {"host": "p7ru8.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru8"},
+    {"host": "spmotors-spb.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "spmotors-spb"},
     {"host": "pg-sup.tradesoft.corp", "engine": "pgsql", "port": 5432, "name": "pg5432"},
     {"host": "pg-sup.tradesoft.corp", "engine": "pgsql", "port": 45432, "name": "pg45432"}
 ]
