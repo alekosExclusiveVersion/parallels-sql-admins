@@ -250,8 +250,17 @@ class SearchableComboBox(QComboBox):
         показывает иконки пунктов, поэтому клик в любом месте поля ведёт
         в тот же попап, что и ввод текста.
         """
-        if not self.count():
+        self._show_popup_on_click()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        """Любой клик по полю открывает попап, включая правую область.
+
+        Правая зона (стрелка/поле без фокуса) не доходит до eventFilter
+        на lineEdit — Qt делает там нативную обработку комбо. Перехват
+        до super() открывает наш попап даже когда клик мимо редактора.
+        """
+        if event.button() == Qt.LeftButton:
+            self._show_popup_on_click()
+            event.accept()
             return
-        self._popup_manual = True
-        self._completer.refresh(self._combo_items(), "", self._item_icon_name)
-        QTimer.singleShot(0, self._completer.complete)
+        super().mousePressEvent(event)

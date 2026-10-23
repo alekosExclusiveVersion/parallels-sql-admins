@@ -252,5 +252,131 @@ class SearchableComboBoxTest(unittest.TestCase):
         self.assertEqual(model.rowCount(), initial_count)
 
 
+class SearchableComboFullClickTest(unittest.TestCase):
+    """Клик в правой области поля тоже открывает попап."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _make(self):
+        combo = SearchableComboBox()
+        combo.addItem("Prod-01", "p7ru1.tradesoft.ru")
+        combo.addItem("Prod-02", "p5g21.tradesoft.ru")
+        combo.addItem("Dev", "dev.local")
+
+        def cleanup():
+            combo.deleteLater()
+            combo.close()
+
+        self.addCleanup(cleanup)
+        return combo
+
+    def _combo_click(self, combo, x):
+        event = QMouseEvent(
+            QEvent.MouseButtonPress,
+            QPointF(x, 5),
+            QPointF(0, 0),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        combo.mousePressEvent(event)
+        QApplication.processEvents()
+
+    def _combo_width(self, combo):
+        return max(combo.width(), 180)
+
+    def test_click_right_area_opens_popup(self):
+        combo = self._make()
+
+        self._combo_click(combo, self._combo_width(combo) - 10)
+
+        self.assertTrue(combo._completer.popup().isVisible())
+
+    def test_click_left_area_opens_popup(self):
+        combo = self._make()
+
+        self._combo_click(combo, 30)
+
+        self.assertTrue(combo._completer.popup().isVisible())
+
+    def test_click_on_empty_combo_no_popup(self):
+        combo = SearchableComboBox()
+
+        def cleanup():
+            combo.deleteLater()
+            combo.close()
+
+        self.addCleanup(cleanup)
+        self._combo_click(combo, 30)
+
+        self.assertFalse(combo._completer.popup().isVisible())
+
+
+class ConsoleResetButtonsTest(unittest.TestCase):
+    """Кнопки сброса выбора сервера и БД в SQL-консоли."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _panel(self):
+        from gui.sql_console import SqlConsolePanel
+
+        panel = SqlConsolePanel()
+
+        def cleanup():
+            panel.deleteLater()
+            panel.close()
+
+        self.addCleanup(cleanup)
+        return panel
+
+    def test_reset_buttons_exist_enabled(self):
+        panel = self._panel()
+        self.assertTrue(hasattr(panel, "btn_server_reset"))
+        self.assertTrue(hasattr(panel, "btn_database_reset"))
+        self.assertTrue(panel.btn_server_reset.isEnabled())
+        self.assertTrue(panel.btn_database_reset.isEnabled())
+
+    def test_reset_server_clears_server_and_database(self):
+        panel = self._panel()
+        panel.cb_server.addItem("srv1.tradesoft.ru", "srv1.tradesoft.ru")
+        panel.cb_server.setCurrentIndex(0)
+        panel.cb_database.addItem("db1", "db1")
+        panel.cb_database.setCurrentIndex(0)
+
+        panel.btn_server_reset.click()
+
+        self.assertEqual(panel.cb_server.currentIndex(), -1)
+        self.assertEqual(panel.cb_server.currentText(), "")
+        self.assertEqual(panel.cb_database.currentIndex(), -1)
+        self.assertEqual(panel.cb_database.currentText(), "")
+
+    def test_reset_database_clears_database(self):
+        panel = self._panel()
+        panel.cb_database.addItem("db1", "db1")
+        panel.cb_database.setCurrentIndex(0)
+
+        panel.btn_database_reset.click()
+
+        self.assertEqual(panel.cb_database.currentIndex(), -1)
+        self.assertEqual(panel.cb_database.currentText(), "")
+
+    def test_reset_buttons_disabled_when_busy(self):
+        panel = self._panel()
+
+        panel.set_busy(True)
+
+        self.assertFalse(panel.btn_server_reset.isEnabled())
+        self.assertFalse(panel.btn_database_reset.isEnabled())
+
+        panel.set_busy(False)
+
+        self.assertTrue(panel.btn_server_reset.isEnabled())
+        self.assertTrue(panel.btn_database_reset.isEnabled())
+
+
 if __name__ == "__main__":
     unittest.main()

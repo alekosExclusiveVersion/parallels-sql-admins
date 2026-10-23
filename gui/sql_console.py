@@ -506,7 +506,22 @@ class SqlConsolePanel(QWidget):
         )
 
         scontrols.addWidget(self.cb_server, 1)
+
+        self.btn_server_reset = QToolButton()
+        self.btn_server_reset.setObjectName("btn_icon")
+        self.btn_server_reset.setIcon(icon("delete_outline"))
+        self.btn_server_reset.setIconSize(QSize(16, 16))
+        self.btn_server_reset.setToolTip("Сбросить выбор сервера")
+        scontrols.addWidget(self.btn_server_reset)
+
         scontrols.addWidget(self.cb_database, 1)
+
+        self.btn_database_reset = QToolButton()
+        self.btn_database_reset.setObjectName("btn_icon")
+        self.btn_database_reset.setIcon(icon("delete_outline"))
+        self.btn_database_reset.setIconSize(QSize(16, 16))
+        self.btn_database_reset.setToolTip("Сбросить выбор БД")
+        scontrols.addWidget(self.btn_database_reset)
 
         self.chk_write = QCheckBox("Разрешить запросы на запись")
         scontrols.addWidget(self.chk_write)
@@ -619,6 +634,8 @@ class SqlConsolePanel(QWidget):
         self.cb_server.currentIndexChanged.connect(self._on_server_index_changed)
         self.cb_server.currentIndexChanged.connect(self._completion_server_changed)
         self.cb_database.currentTextChanged.connect(self._catalog_schedule)
+        self.btn_server_reset.clicked.connect(self._reset_server)
+        self.btn_database_reset.clicked.connect(self._reset_database)
         self.cb_script.currentIndexChanged.connect(self._on_script_picked)
         self.chk_all_servers.toggled.connect(self.scopeChanged)
         self.chk_all_databases.toggled.connect(self.scopeChanged)
@@ -650,6 +667,8 @@ class SqlConsolePanel(QWidget):
         self.chk_all_servers.setEnabled(not busy)
         self.chk_all_databases.setEnabled(not busy)
         self.cb_script.setEnabled(not busy)
+        self.btn_server_reset.setEnabled(not busy)
+        self.btn_database_reset.setEnabled(not busy)
         self.scopeEnabledChanged.emit(not busy)
 
         self.cb_server.setEnabled(
@@ -997,3 +1016,16 @@ class SqlConsolePanel(QWidget):
     def _clear(self) -> None:
         self.editor.clear()
         self.clearRequested.emit()
+
+    def _reset_server(self) -> None:
+        self.cb_server.setCurrentIndex(-1)
+        self.cb_server.lineEdit().clear()
+        self.cb_server.refresh_completion()
+        self.cb_database.setCurrentIndex(-1)
+        self.cb_database.lineEdit().clear()
+        self.cb_database.refresh_completion()
+
+    def _reset_database(self) -> None:
+        self.cb_database.setCurrentIndex(-1)
+        self.cb_database.lineEdit().clear()
+        self.cb_database.refresh_completion()
