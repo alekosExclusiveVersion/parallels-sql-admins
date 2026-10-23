@@ -169,25 +169,76 @@ class ResetSnapshotTest(unittest.TestCase):
 
         restore_dialog_defaults(dialog)
 
-    def test_reset_button_added_and_works(self):
-        from gui.dialog_reset import add_dialog_reset_button
+    def test_field_reset_enables_clear_button(self):
+        from gui.dialog_reset import enable_field_reset
 
         dialog = self._dialog()
         line = QLineEdit("исходный")
         dialog.layout().addWidget(line)
-        snapshot_dialog_defaults(dialog)
 
-        button = add_dialog_reset_button(dialog)
-        self.assertIsInstance(button, QPushButton)
-        self.assertEqual(button.text(), "Сброс")
+        enable_field_reset(dialog)
+
+        self.assertTrue(line.isClearButtonEnabled())
 
         line.setText("изменённый")
+        line.clear()
+        self.assertEqual(line.text(), "")
 
-        button.click()
-        self.assertEqual(line.text(), "исходный")
+    def test_field_reset_skips_read_only_line_edit(self):
+        from gui.dialog_reset import enable_field_reset
+
+        dialog = self._dialog()
+        line = QLineEdit("только чтение")
+        line.setReadOnly(True)
+        dialog.layout().addWidget(line)
+
+        enable_field_reset(dialog)
+
+        self.assertFalse(line.isClearButtonEnabled())
+
+    def test_field_reset_adds_corner_button_to_plain_text_edit(self):
+        from gui.dialog_reset import enable_field_reset
+
+        dialog = self._dialog()
+        edit = QPlainTextEdit()
+        edit.setPlainText("исходный текст")
+        dialog.layout().addWidget(edit)
+
+        enable_field_reset(dialog)
+
+        corner = edit.cornerWidget()
+        self.assertIsNotNone(corner)
+
+        edit.setPlainText("изменённый текст")
+        corner.click()
+        self.assertEqual(edit.toPlainText(), "")
+
+    def test_field_reset_enables_clear_button_on_combo(self):
+        from gui.dialog_reset import enable_field_reset
+
+        dialog = self._dialog()
+        combo = QComboBox()
+        combo.setEditable(True)
+        combo.addItem("item1")
+        dialog.layout().addWidget(combo)
+
+        enable_field_reset(dialog)
+
+        self.assertTrue(combo.lineEdit().isClearButtonEnabled())
+
+    def test_field_reset_does_not_add_buttons(self):
+        from gui.dialog_reset import enable_field_reset
+
+        dialog = self._dialog()
+        dialog.layout().addWidget(QLineEdit("поле"))
+        dialog.layout().addWidget(QPlainTextEdit())
+
+        enable_field_reset(dialog)
+
+        self.assertEqual(dialog.findChildren(QPushButton), [])
 
 
-class DialogResetButtonTest(unittest.TestCase):
+class DialogFieldResetTest(unittest.TestCase):
 
     def _start(self, factory):
         dialog = factory()
@@ -197,126 +248,126 @@ class DialogResetButtonTest(unittest.TestCase):
             w for w in dialog.findChildren(QWidget)
             if isinstance(w, QPushButton) and w.text() == "Сброс"
         ]
-        return dialog, buttons
+        line_edits = [
+            w for w in dialog.findChildren(QLineEdit)
+            if not w.isReadOnly()
+        ]
+        return dialog, buttons, line_edits
 
     def test_server_dialog_reset_fields(self):
         from gui.server_dialog import ServerDialog
 
-        dialog, buttons = self._start(ServerDialog)
-        self.assertEqual(len(buttons), 1)
+        dialog, buttons, line_edits = self._start(ServerDialog)
+        self.assertEqual(buttons, [])
+        self.assertTrue(line_edits)
+        self.assertTrue(
+            all(le.isClearButtonEnabled() for le in line_edits)
+        )
 
         dialog.ed_name.setText("изменено")
-        buttons[0].click()
+        dialog.ed_name.clear()
         self.assertEqual(dialog.ed_name.text(), "")
 
     def test_credentials_dialog_reset_fields(self):
         from gui.credentials_dialog import CredentialsDialog
 
-        dialog, buttons = self._start(
+        dialog, buttons, line_edits = self._start(
             lambda: CredentialsDialog(server_label="test_server")
         )
-        self.assertEqual(len(buttons), 1)
+        self.assertEqual(buttons, [])
+        self.assertTrue(
+            all(le.isClearButtonEnabled() for le in line_edits)
+        )
 
         dialog.ed_user.setText("новый")
         dialog.ed_password.setText("пароль")
-        buttons[0].click()
+        dialog.ed_user.clear()
+        dialog.ed_password.clear()
         self.assertEqual(dialog.ed_user.text(), "")
         self.assertEqual(dialog.ed_password.text(), "")
-
-    def test_credentials_dialog_reset_keeps_prefilled_user(self):
-        from gui.credentials_dialog import CredentialsDialog
-
-        dialog, buttons = self._start(
-            lambda: CredentialsDialog(server_label="s", user="alice")
-        )
-        dialog.ed_user.setText("bob")
-        buttons[0].click()
-        self.assertEqual(dialog.ed_user.text(), "alice")
 
     def test_attach_db_dialog_reset_fields(self):
         from gui.attach_db_dialog import AttachDatabaseDialog
 
-        dialog, buttons = self._start(AttachDatabaseDialog)
-        self.assertEqual(len(buttons), 1)
+        dialog, buttons, line_edits = self._start(AttachDatabaseDialog)
+        self.assertEqual(buttons, [])
+        self.assertTrue(
+            all(le.isClearButtonEnabled() for le in line_edits)
+        )
 
         dialog._db_name.setText("модифицированная")
         dialog._mdf_path.setText(r"c:\mnt\data.mdf")
-        buttons[0].click()
+        dialog._db_name.clear()
+        dialog._mdf_path.clear()
         self.assertEqual(dialog._db_name.text(), "")
         self.assertEqual(dialog._mdf_path.text(), "")
 
     def test_restore_db_dialog_reset_fields(self):
         from gui.restore_db_dialog import RestoreDatabaseDialog
 
-        dialog, buttons = self._start(RestoreDatabaseDialog)
-        self.assertEqual(len(buttons), 1)
+        dialog, buttons, line_edits = self._start(RestoreDatabaseDialog)
+        self.assertEqual(buttons, [])
+        self.assertTrue(
+            all(le.isClearButtonEnabled() for le in line_edits)
+        )
 
         dialog._db_name.setText("модифицированная")
         dialog._bak_path.setText(r"c:\mnt\db.bak")
-        dialog._replace_cb.setChecked(False)
-        buttons[0].click()
+        dialog._db_name.clear()
+        dialog._bak_path.clear()
         self.assertEqual(dialog._db_name.text(), "")
         self.assertEqual(dialog._bak_path.text(), "")
-        self.assertTrue(dialog._replace_cb.isChecked())
 
     def test_master_password_dialog_reset_unlock_mode(self):
         from gui.master_password_dialog import MasterPasswordDialog
 
-        dialog, buttons = self._start(MasterPasswordDialog)
-        self.assertEqual(len(buttons), 1)
+        dialog, buttons, line_edits = self._start(MasterPasswordDialog)
+        self.assertEqual(buttons, [])
+        self.assertTrue(
+            all(le.isClearButtonEnabled() for le in line_edits)
+        )
 
         dialog.ed_password.setText("секрет")
-        buttons[0].click()
+        dialog.ed_password.clear()
         self.assertEqual(dialog.ed_password.text(), "")
 
     def test_master_password_dialog_reset_create_mode(self):
         from gui.master_password_dialog import MasterPasswordDialog
 
-        dialog, buttons = self._start(
+        dialog, buttons, line_edits = self._start(
             lambda: MasterPasswordDialog(mode="create")
         )
+        self.assertEqual(buttons, [])
 
         dialog.ed_password.setText("секрет")
         dialog.ed_confirm.setText("секрет2")
-        buttons[0].click()
+        dialog.ed_password.clear()
+        dialog.ed_confirm.clear()
         self.assertEqual(dialog.ed_password.text(), "")
         self.assertEqual(dialog.ed_confirm.text(), "")
-
-    def test_settings_dialog_reset_radios(self):
-        from gui.settings_dialog import SettingsDialog
-
-        dialog, buttons = self._start(SettingsDialog)
-        self.assertEqual(len(buttons), 1)
-
-        initial_master = dialog.rb_master.isChecked()
-        initial_file = dialog.rb_file.isChecked()
-        dialog.rb_master.setChecked(not initial_master)
-        dialog.rb_file.setChecked(not initial_file)
-        buttons[0].click()
-        self.assertEqual(dialog.rb_master.isChecked(), initial_master)
-        self.assertEqual(dialog.rb_file.isChecked(), initial_file)
 
     def test_connection_strings_dialog_reset_import_fields(self):
         from gui.connection_strings_dialog import ConnectionStringsDialog
 
-        dialog, buttons = self._start(ConnectionStringsDialog)
-        self.assertEqual(len(buttons), 1)
+        dialog, buttons, line_edits = self._start(ConnectionStringsDialog)
+        self.assertEqual(buttons, [])
 
+        corner = dialog.ed_import.cornerWidget()
+        self.assertIsNotNone(corner)
         dialog.ed_import.setPlainText("mysql://u:p@h:3306")
-        dialog.chk_replace.setChecked(not dialog.chk_replace.isChecked())
-        buttons[0].click()
+        corner.click()
         self.assertEqual(dialog.ed_import.toPlainText(), "")
-        self.assertFalse(dialog.chk_replace.isChecked())
+
     def test_scripts_manager_dialog_has_no_reset_button(self):
         from gui.scripts_manager_dialog import ScriptsManagerDialog
 
-        dialog, buttons = self._start(ScriptsManagerDialog)
+        dialog, buttons, _ = self._start(ScriptsManagerDialog)
         self.assertEqual(buttons, [])
 
     def test_update_dialog_has_no_reset_button(self):
         from gui.update_dialog import UpdateDialog
 
-        dialog, buttons = self._start(lambda: UpdateDialog("1.0.0"))
+        dialog, buttons, _ = self._start(lambda: UpdateDialog("1.0.0"))
         self.assertEqual(buttons, [])
 
 

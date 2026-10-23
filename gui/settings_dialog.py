@@ -32,7 +32,7 @@ from common.server_registry import registry
 from gui import styles as theme_styles
 from gui.master_password_dialog import MasterPasswordDialog
 from gui.widgets.copyable_alert import CopyableMessageBox
-from gui.dialog_reset import snapshot_dialog_defaults, add_dialog_reset_button
+from gui.dialog_reset import enable_field_reset
 
 
 class SettingsDialog(QDialog):
@@ -43,10 +43,9 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(520)
         self._build_ui()
         self._load_current()
+        enable_field_reset(self)
 
-        snapshot_dialog_defaults(self)
 
-        add_dialog_reset_button(self)
 
     # ----------------------------------------------------------
     # UI

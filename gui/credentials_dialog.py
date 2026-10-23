@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from gui.widgets.copyable_alert import CopyableMessageBox
-from gui.dialog_reset import snapshot_dialog_defaults, add_dialog_reset_button
+from gui.dialog_reset import enable_field_reset
 
 
 class CredentialsDialog(QDialog):
@@ -49,9 +49,7 @@ class CredentialsDialog(QDialog):
             self.ed_password.setFocus()
         else:
             self.ed_user.setFocus()
-
-        snapshot_dialog_defaults(self)
-        add_dialog_reset_button(self)
+        enable_field_reset(self)
 
     def _build_ui(self, message: str) -> None:
         layout = QVBoxLayout(self)

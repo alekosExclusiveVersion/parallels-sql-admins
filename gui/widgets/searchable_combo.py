@@ -115,6 +115,7 @@ class SearchableComboBox(QComboBox):
         self._completer = SearchComboCompleter(self)
         self.setCompleter(self._completer)
         self._completer.activated.connect(self._on_activated)
+        self.lineEdit().setClearButtonEnabled(True)
         self.lineEdit().textChanged.connect(self._on_text_changed)
         self.lineEdit().installEventFilter(self)
         # eventFilter на попапе: перехват Enter/Escape/DOWN/UP
@@ -201,6 +202,11 @@ class SearchableComboBox(QComboBox):
         ]
 
     def _on_text_changed(self, text: str) -> None:
+        if not text:
+            if self.currentIndex() != -1:
+                self.setCurrentIndex(-1)
+            self._completer.popup().hide()
+            return
         if self._popup_manual:
             self._popup_manual = False
             return
@@ -212,7 +218,7 @@ class SearchableComboBox(QComboBox):
         if self._completer.popup().isVisible() and self._navigating:
             return
         self._completer.refresh(self._combo_items(), text, self._item_icon_name)
-        if not text or not self.isVisible():
+        if not self.isVisible():
             self._completer.popup().hide()
             return
         if self._completer.popup().isVisible():
