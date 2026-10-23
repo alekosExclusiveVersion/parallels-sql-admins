@@ -353,6 +353,7 @@ class ResultTable(QTableWidget):
         self.setSortingEnabled(False)
         self.setColumnCount(len(CHECK_HEADERS))
         self.setHorizontalHeaderLabels(CHECK_HEADERS)
+        self.setRowCount(0)
 
         header = self.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)

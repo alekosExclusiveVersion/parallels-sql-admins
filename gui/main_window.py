@@ -2177,7 +2177,7 @@ class MainWindow(QWidget):
 
     def _sql_clear(self):
 
-        self.table.clear_results()
+        self.table.reset_table()
         self.status_bar.set_status("Готово")
 
     def _set_export_ui(self, running: bool) -> None:
