@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from gui.dialog_reset import snapshot_dialog_defaults, add_dialog_reset_button
+
 
 class AttachDatabaseDialog(QDialog):
     def __init__(self, parent=None):
@@ -61,6 +63,9 @@ class AttachDatabaseDialog(QDialog):
         layout.addLayout(path_row)
         layout.addSpacing(16)
         layout.addLayout(btn_row)
+
+        snapshot_dialog_defaults(self)
+        add_dialog_reset_button(self, btn_row)
 
     def _browse(self):
         path, _ = QFileDialog.getOpenFileName(

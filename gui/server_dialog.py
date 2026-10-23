@@ -38,6 +38,7 @@ from common.server_registry import (
 from gui import styles as theme_styles
 from gui.widgets.help_icon import HelpIcon
 from gui.widgets.copyable_alert import CopyableMessageBox
+from gui.dialog_reset import snapshot_dialog_defaults, add_dialog_reset_button
 from gui.worker_thread import WorkerHost
 
 
@@ -99,6 +100,8 @@ class ServerDialog(QDialog):
 
         if spec is not None:
             self._load_spec(spec)
+
+        snapshot_dialog_defaults(self)
 
         theme_styles.register_theme_listener(self._refresh_theme)
 
@@ -193,6 +196,7 @@ class ServerDialog(QDialog):
         buttons.addWidget(self.btn_save)
 
         layout.addLayout(buttons)
+        add_dialog_reset_button(self, buttons)
 
         # ----------------------------------------------------------
         # Signals

@@ -48,6 +48,7 @@ from common.connection_string import (
 from common.server_registry import ServerSpec, registry
 from gui import styles as theme_styles
 from gui.widgets.copyable_alert import CopyableMessageBox
+from gui.dialog_reset import snapshot_dialog_defaults, add_dialog_reset_button
 
 
 class ConnectionStringsDialog(QDialog):
@@ -60,9 +61,12 @@ class ConnectionStringsDialog(QDialog):
 
         self._build_ui()
 
+        snapshot_dialog_defaults(self)
+
         theme_styles.register_theme_listener(self._refresh_theme)
         theme_styles.apply_window_appearance(self)
 
+        add_dialog_reset_button(self, self._buttons_row)
     # ----------------------------------------------------------
     # UI
     # ----------------------------------------------------------
@@ -92,6 +96,7 @@ class ConnectionStringsDialog(QDialog):
         self.btn_close.clicked.connect(self.accept)
         buttons.addWidget(self.btn_close)
         layout.addLayout(buttons)
+        self._buttons_row = buttons
 
     # ----------------------------------------------------------
     # Импорт
