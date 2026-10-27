@@ -294,7 +294,7 @@ SELECT
     DB_NAME(database_id) AS db,
     SUM(CAST(size AS BIGINT)) * 8 * 1024 AS total_bytes
 FROM sys.master_files
-WHERE type = 0
+WHERE type IN (0, 1)
 GROUP BY database_id
 """
         rows = self.query(host, sql)

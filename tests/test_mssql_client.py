@@ -7,6 +7,7 @@ tests/test_mssql_client.py
 """
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from common.mssql_client import MSSQLClient
@@ -69,6 +70,45 @@ class TestMSSQLTestConnection(unittest.TestCase):
         ok, msg = self.client.test_connection("h", 1433, "u", "p")
         self.assertTrue(ok)
         mock_conn.close.assert_called_once()
+
+
+class TestMSSQLDatabaseSizes(unittest.TestCase):
+
+    def setUp(self):
+        self.client = MSSQLClient(cfg=_FakeConfig())
+
+    def _patched(self, ignore):
+        cfg = SimpleNamespace(
+            advanced=SimpleNamespace(ignore_databases=ignore)
+        )
+        return patch("common.mssql_client.config", cfg)
+
+    def test_size_counts_data_and_log_files(self):
+        captured = {}
+
+        def fake_query(host, sql):
+            captured["sql"] = sql
+            return [{"db": "prod", "total_bytes": 8 * 1024 * 2}]
+
+        with patch.object(self.client, "query", side_effect=fake_query), \
+             self._patched(set()):
+            sizes = self.client.database_sizes("h")
+
+        self.assertEqual(sizes, {"prod": 8 * 1024 * 2})
+        self.assertIn("type IN (0, 1)", " ".join(captured["sql"].split()))
+
+    def test_size_excludes_ignored_databases(self):
+        def fake_query(host, sql):
+            return [
+                {"db": "prod", "total_bytes": 8 * 1024},
+                {"db": "skipped", "total_bytes": 8 * 1024},
+            ]
+
+        with patch.object(self.client, "query", side_effect=fake_query), \
+             self._patched({"skipped"}):
+            sizes = self.client.database_sizes("h")
+
+        self.assertEqual(sizes, {"prod": 8 * 1024})
 
 
 class TestMSSQLServerInfo(unittest.TestCase):
