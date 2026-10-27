@@ -238,7 +238,7 @@ class TestServersTree(unittest.TestCase):
         tree.apply_sizes("srv1", {"ar_a": 1000, "ar_b": 2000})
 
         self.assertIn("srv1", srv.text(0))
-        self.assertEqual(srv.child(0).text(0), "ar_a  (1000.0 B)")
+        self.assertEqual(srv.child(0).text(0), "ar_a  (1.0 KB)")
         self.assertEqual(srv.child(1).text(0), "ar_b  (2.0 KB)")
         # узлы не пересоздавались — placeholder таблиц сохранён
         self.assertEqual(srv.child(0).childCount(), 1)
@@ -365,7 +365,7 @@ class TestServersTree(unittest.TestCase):
 
         self.assertEqual(srv.childCount(), 1)
         self.assertEqual(tree.db_name(srv.child(0)), "ar_a")
-        self.assertEqual(srv.child(0).text(0), "ar_a  (1000.0 B)")
+        self.assertEqual(srv.child(0).text(0), "ar_a  (1.0 KB)")
 
     def test_apply_databases_no_databases(self):
         tree = ServersTree()
@@ -492,7 +492,7 @@ class TestServersTree(unittest.TestCase):
         tree.apply_sizes("db1", {"ar_a": 1000})
 
         self.assertTrue(
-            srv.text(0).startswith("Prod  (1000.0 B)")
+            srv.text(0).startswith("Prod  (1.0 KB)")
         )
         self.assertEqual(tree.server_name(srv), "db1")
 
@@ -580,6 +580,20 @@ class TestServersTree(unittest.TestCase):
         self.assertEqual(dbs, ["ar_a", "ar_b"])
         # размеры дописаны к отсортированным узлам
         self.assertTrue(srv.child(0).text(0).startswith("ar_a  ("))
+
+
+class DecimalSizeFormatTest(unittest.TestCase):
+    """format_size делит на 1000 — десятичные единицы, как счёт в SSMS."""
+
+    def test_bytes_and_kb(self):
+        self.assertEqual(ServersTree.format_size(999), "999.0 B")
+        self.assertEqual(ServersTree.format_size(1000), "1.0 KB")
+        self.assertEqual(ServersTree.format_size(2048), "2.0 KB")
+
+    def test_mb_gb_tb(self):
+        self.assertEqual(ServersTree.format_size(8_388_608), "8.4 MB")
+        self.assertEqual(ServersTree.format_size(52_095_901_696), "52.1 GB")
+        self.assertEqual(ServersTree.format_size(10**12 + 5 * 10**11), "1.5 TB")
 
 
 if __name__ == "__main__":

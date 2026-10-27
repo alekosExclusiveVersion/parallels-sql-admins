@@ -23,6 +23,7 @@ class DbOperation(str, Enum):
     ATTACH = "attach"
     RESTORE = "restore"
     SHRINK_LOG = "shrink_log"
+    DB_FILES = "db_files"
 
 
 class DatabaseOperationWorker(QObject):
@@ -37,6 +38,7 @@ class DatabaseOperationWorker(QObject):
         self._operation: str = ""
         self._file_path: str = ""
         self._replace: bool = False
+        self.result: list[dict] = []
 
     def set_request(
         self,
@@ -52,6 +54,7 @@ class DatabaseOperationWorker(QObject):
         self._operation = operation
         self._file_path = file_path
         self._replace = replace
+        self.result = []
 
     def run(self) -> None:
         ok = False
@@ -86,6 +89,11 @@ class DatabaseOperationWorker(QObject):
 
                 case DbOperation.SHRINK_LOG:
                     client.shrink_log(self._host, self._database)
+
+                case DbOperation.DB_FILES:
+                    self.result = client.database_files(
+                        self._host, self._database
+                    )
 
                 case _:
                     raise ValueError(

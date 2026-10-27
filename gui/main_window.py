@@ -845,9 +845,38 @@ class MainWindow(QWidget):
         )
         self.db_op_thread.start()
 
-    def _shrink_log(self, server: str, database: str) -> None:
+    def _db_files_size(self, server: str, database: str) -> None:
         if not server or not database:
             return
+
+        engine = registry.engine(server)
+        if engine != ENGINE_MSSQL:
+            return
+
+        if not self._ensure_credentials(server):
+            return
+
+        if self.db_op_thread.isRunning():
+            self.status_bar.set_status("Операция уже выполняется…")
+            logger.warning(
+                f"DB files {server}.{database} skipped: db_op thread busy"
+            )
+            return
+
+        self.append_log(
+            "INFO",
+            f"Чтение размеров файлов БД «{database}» "
+            f"на сервере «{server}»…",
+        )
+        logger.action(f"DB files requested: {server}.{database}")
+
+        self.db_op_worker.set_request(
+            server, database, DbOperation.DB_FILES,
+        )
+        self.db_op_thread.start()
+
+    def _shrink_log(self, server: str, database: str) -> None:
+        if not server or not database:            return
 
         engine = registry.engine(server)
         if engine != ENGINE_MSSQL:
@@ -1018,7 +1047,41 @@ class MainWindow(QWidget):
                 )
                 logger.action(f"Log shrunk: {host}.{database}")
 
-        self._sql_refresh_databases()
+            case DbOperation.DB_FILES:
+                self._show_db_files(host, database)
+
+        if op != DbOperation.DB_FILES:
+            self._sql_refresh_databases()
+
+    def _show_db_files(self, host: str, database: str) -> None:
+        files = self.db_op_worker.result or []
+        data = sum(f["bytes"] for f in files if f["type"] == "ROWS")
+        log = sum(f["bytes"] for f in files if f["type"] == "LOG")
+
+        fmt = self.servers_tree.format_size
+        lines = [f"БД «{database}»:\n"]
+        for f in files:
+            kind = "Данные" if f["type"] == "ROWS" else (
+                "Журнал" if f["type"] == "LOG" else f["type"]
+            )
+            logical = f" ({f['name']})" if f["name"] else ""
+            lines.append(
+                f"{kind}{logical}: {fmt(f['bytes'])}  —  {f['file']}"
+            )
+        lines.append("\nРазмер (как в SSMS):")
+        lines.append(f"Данные: {fmt(data)}   Журнал: {fmt(log)}   "
+                     f"Всего: {fmt(data + log)}")
+
+        self.append_log(
+            "SUCCESS",
+            f"Размеры файлов БД «{database}» на сервере «{host}» "
+            "получены.",
+        )
+        CopyableMessageBox.information(
+            self,
+            "Размер файлов БД",
+            "\n".join(lines),
+        )
 
     def _db_op_error(self, message: str) -> None:
         host = self.db_op_worker._host
@@ -1031,6 +1094,7 @@ class MainWindow(QWidget):
             DbOperation.ATTACH: "присоединения",
             DbOperation.RESTORE: "восстановления",
             DbOperation.SHRINK_LOG: "очистки журнала транзакций",
+            DbOperation.DB_FILES: "чтения размеров файлов",
         }
         op_name = op_names.get(op, op)
 
@@ -1593,6 +1657,9 @@ class MainWindow(QWidget):
 
         self.servers_tree.shrinkLogRequested.connect(
             self._shrink_log
+        )
+        self.servers_tree.fileSizesRequested.connect(
+            self._db_files_size
         )
 
         self.servers_tree.attachDatabaseRequested.connect(

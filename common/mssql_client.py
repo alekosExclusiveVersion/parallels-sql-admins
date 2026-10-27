@@ -294,7 +294,7 @@ SELECT
     DB_NAME(database_id) AS db,
     SUM(CAST(size AS BIGINT)) * 8 * 1024 AS total_bytes
 FROM sys.master_files
-WHERE type IN (0, 1)
+WHERE type = 0
 GROUP BY database_id
 """
         rows = self.query(host, sql)
@@ -306,6 +306,33 @@ GROUP BY database_id
             for row in rows
             if row.get("db") and row["db"] not in ignore
         }
+
+    def database_files(self, host: str, database: str) -> list[dict]:
+        """Файлы БД (sys.database_files): данные, журнал, прочие.
+
+        Размер в байтах как сумма выделенных страниц — совместимо со
+        значением Size в SQL Server Management Studio.
+        """
+        sql = """
+SELECT
+    type_desc,
+    name,
+    physical_name,
+    CAST(size AS BIGINT) * 8 * 1024 AS bytes
+FROM sys.database_files
+ORDER BY CASE type_desc WHEN N'ROWS' THEN 0 ELSE 1 END
+"""
+        rows = self.query(host, sql, database=database)
+
+        return [
+            {
+                "type": row.get("type_desc", ""),
+                "name": row.get("name", ""),
+                "file": str(row.get("physical_name", "")).replace("\\\\", "\\"),
+                "bytes": int(row.get("bytes") or 0),
+            }
+            for row in rows
+        ]
 
     def server_catalog(
         self,

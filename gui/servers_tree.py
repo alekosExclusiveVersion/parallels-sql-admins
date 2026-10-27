@@ -77,6 +77,7 @@ class ServersTree(QTreeWidget):
     dropDatabaseRequested = Signal(str, str)  # server, database
     detachDatabaseRequested = Signal(str, str)  # server, database
     shrinkLogRequested = Signal(str, str)  # server, database
+    fileSizesRequested = Signal(str, str)  # server, database
     attachDatabaseRequested = Signal(str)    # server
     restoreDatabaseRequested = Signal(str)   # server
 
@@ -195,9 +196,9 @@ class ServersTree(QTreeWidget):
     def format_size(size_bytes: int) -> str:
         size = float(size_bytes)
         for unit in ("B", "KB", "MB", "GB", "TB"):
-            if size < 1024 or unit == "TB":
+            if size < 1000 or unit == "TB":
                 return f"{size:.1f} {unit}"
-            size /= 1024
+            size /= 1000
         return f"{size:.1f} TB"
 
     # ----------------------------------------------------------
@@ -608,6 +609,16 @@ class ServersTree(QTreeWidget):
                 action_shrink.triggered.connect(
                     self._menu_trigger(
                         lambda: self.shrinkLogRequested.emit(server, database)
+                    )
+                )
+
+                action_files = menu.addAction(
+                    icon("storage", 16, "@icon_muted"),
+                    f"Размер файлов БД «{database}»…",
+                )
+                action_files.triggered.connect(
+                    self._menu_trigger(
+                        lambda: self.fileSizesRequested.emit(server, database)
                     )
                 )
 
