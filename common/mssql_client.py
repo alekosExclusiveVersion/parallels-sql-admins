@@ -290,35 +290,44 @@ class MSSQLClient:
 
     def database_sizes(self, host: str) -> dict[str, int]:
         sql = """
-SELECT
-    DB_NAME(database_id) AS db,
-    SUM(CAST(size AS BIGINT)) * 8 * 1024 AS total_bytes
+SELECT DISTINCT DB_NAME(database_id) AS db
 FROM sys.master_files
 WHERE type = 0
-GROUP BY database_id
 """
         rows = self.query(host, sql)
 
         ignore = set(config.advanced.ignore_databases) | _SYSTEM_DBS
+        sizes: dict[str, int] = {}
 
-        return {
-            row["db"]: int(row["total_bytes"] or 0)
-            for row in rows
-            if row.get("db") and row["db"] not in ignore
-        }
+        for row in rows:
+            db = row.get("db")
+            if not db or db in ignore:
+                continue
+
+            used_sql = """
+SELECT SUM(CAST(FILEPROPERTY(name, 'SpaceUsed') AS BIGINT) * 8 * 1024) AS used_bytes
+FROM sys.master_files
+WHERE type = 0
+"""
+            used_rows = self.query(host, used_sql, database=db)
+            sizes[db] = int(used_rows[0]["used_bytes"] or 0) if used_rows else 0
+
+        return sizes
 
     def database_files(self, host: str, database: str) -> list[dict]:
         """Файлы БД (sys.database_files): данные, журнал, прочие.
 
         Размер в байтах как сумма выделенных страниц — совместимо со
-        значением Size в SQL Server Management Studio.
+        значением Size в SQL Server Management Studio. Использованное
+        пространство берётся через FILEPROPERTY(name, 'SpaceUsed').
         """
         sql = """
 SELECT
     type_desc,
     name,
     physical_name,
-    CAST(size AS BIGINT) * 8 * 1024 AS bytes
+    CAST(size AS BIGINT) * 8 * 1024 AS bytes,
+    CAST(FILEPROPERTY(name, 'SpaceUsed') AS BIGINT) * 8 * 1024 AS used_bytes
 FROM sys.database_files
 ORDER BY CASE type_desc WHEN N'ROWS' THEN 0 ELSE 1 END
 """
@@ -330,6 +339,7 @@ ORDER BY CASE type_desc WHEN N'ROWS' THEN 0 ELSE 1 END
                 "name": row.get("name", ""),
                 "file": str(row.get("physical_name", "")).replace("\\\\", "\\"),
                 "bytes": int(row.get("bytes") or 0),
+                "used": int(row.get("used_bytes") or 0),
             }
             for row in rows
         ]

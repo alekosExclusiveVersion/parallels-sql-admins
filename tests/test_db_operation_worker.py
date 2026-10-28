@@ -28,9 +28,9 @@ class DbFilesOperationTest(unittest.TestCase):
     def _run(self, op):
         files = [
             {"type": "ROWS", "name": "f1", "file": "a.mdf",
-             "bytes": 1024 * 1024 * 10},
+             "bytes": 1024 * 1024 * 10, "used": 1024 * 1024 * 9},
             {"type": "LOG", "name": "f2", "file": "a.ldf",
-             "bytes": 1024 * 1024 * 2},
+             "bytes": 1024 * 1024 * 2, "used": 1024 * 1024 * 2},
         ]
         client = _FileRecording(files)
 

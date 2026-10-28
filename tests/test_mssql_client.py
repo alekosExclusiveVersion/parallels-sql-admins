@@ -86,9 +86,9 @@ class TestMSSQLDatabaseSizes(unittest.TestCase):
     def test_size_counts_data_files_only(self):
         captured = {}
 
-        def fake_query(host, sql):
+        def fake_query(host, sql, database=None):
             captured["sql"] = sql
-            return [{"db": "vinpart", "total_bytes": 8 * 1024 * 2}]
+            return [{"db": "vinpart", "used_bytes": 8 * 1024 * 2}]
 
         with patch.object(self.client, "query", side_effect=fake_query), \
              self._patched(set()):
@@ -106,9 +106,10 @@ class TestMSSQLDatabaseSizes(unittest.TestCase):
             return [
                 {"type_desc": "ROWS", "name": "vinpart_base",
                  "physical_name": "d:\\data\\vinpart.mdf",
-                 "bytes": 52_095_901_696},
+                 "bytes": 52_095_901_696, "used_bytes": 50_000_000_000},
                 {"type_desc": "LOG", "name": "vinpart_log",
-                 "physical_name": "d:\\data\\vinpart.ldf", "bytes": 8_388_608},
+                 "physical_name": "d:\\data\\vinpart.ldf",
+                 "bytes": 8_388_608, "used_bytes": 8_388_608},
             ]
 
         with patch.object(self.client, "query", side_effect=fake_query):
@@ -117,16 +118,18 @@ class TestMSSQLDatabaseSizes(unittest.TestCase):
         self.assertEqual(captured["database"], "vinpart")
         self.assertEqual(files, [
             {"type": "ROWS", "name": "vinpart_base",
-             "file": "d:\\data\\vinpart.mdf", "bytes": 52_095_901_696},
+             "file": "d:\\data\\vinpart.mdf", "bytes": 52_095_901_696,
+             "used": 50_000_000_000},
             {"type": "LOG", "name": "vinpart_log",
-             "file": "d:\\data\\vinpart.ldf", "bytes": 8_388_608},
+             "file": "d:\\data\\vinpart.ldf", "bytes": 8_388_608,
+             "used": 8_388_608},
         ])
 
     def test_size_excludes_ignored_databases(self):
-        def fake_query(host, sql):
+        def fake_query(host, sql, database=None):
             return [
-                {"db": "prod", "total_bytes": 8 * 1024},
-                {"db": "skipped", "total_bytes": 8 * 1024},
+                {"db": "prod", "used_bytes": 8 * 1024},
+                {"db": "skipped", "used_bytes": 8 * 1024},
             ]
 
         with patch.object(self.client, "query", side_effect=fake_query), \

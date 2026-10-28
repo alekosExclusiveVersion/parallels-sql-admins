@@ -1065,12 +1065,23 @@ class MainWindow(QWidget):
                 "Журнал" if f["type"] == "LOG" else f["type"]
             )
             logical = f" ({f['name']})" if f["name"] else ""
+            used = int(f.get("used") or 0)
             lines.append(
-                f"{kind}{logical}: {fmt(f['bytes'])}  —  {f['file']}"
+                f"{kind}{logical}: {fmt(f['bytes'])} "
+                f"(использовано: {fmt(used)})  —  {f['file']}"
             )
         lines.append("\nРазмер (как в SSMS):")
-        lines.append(f"Данные: {fmt(data)}   Журнал: {fmt(log)}   "
-                     f"Всего: {fmt(data + log)}")
+        data_used = sum(
+            int(f.get("used") or 0) for f in files if f["type"] == "ROWS"
+        )
+        log_used = sum(
+            int(f.get("used") or 0) for f in files if f["type"] == "LOG"
+        )
+        lines.append(
+            f"Данные: {fmt(data)} (использовано: {fmt(data_used)})"
+        )
+        lines.append(f"Журнал: {fmt(log)} (использовано: {fmt(log_used)})")
+        lines.append(f"Всего: {fmt(data + log)}")
 
         self.append_log(
             "SUCCESS",
