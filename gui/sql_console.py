@@ -409,10 +409,13 @@ class SqlConsolePanel(QWidget):
     catalogRequested = Signal(str, str)      # запросить каталог таблиц/колонок
     scopeEnabledChanged = Signal(bool)       # доступность скоупа (не busy)
     scriptInsertFromEditor = Signal(str, str)  # вставка скрипта из автодополнения (body, prefix)
+    scriptPickRequested = Signal(str)        # выбран скрипт из списка над редактором (body)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._server_engines: dict[str, str] = {}
+        self._scripts: list[dict] = []
+        self._pick_pending: bool = False
         self._working_db: bool = False
         self._build_ui()
 
@@ -529,6 +532,25 @@ class SqlConsolePanel(QWidget):
         run_row.addWidget(self.chk_all_servers)
         run_row.addWidget(self.chk_all_databases)
 
+        self.cb_script = SearchableComboBox()
+        self.cb_script.setObjectName("combo_script")
+        self.cb_script._item_icon_name = "content_copy"
+        self.cb_script.setMinimumWidth(200)
+        self.cb_script.setMaximumWidth(300)
+        self.cb_script.setFixedHeight(30)
+        self.cb_script.lineEdit().setPlaceholderText("Выберите скрипт…")
+        self.cb_script.setToolTip(
+            "Скрипт из библиотеки: выбор вставляет его в редактор. "
+            "Если консоль не пуста, будет предложено заменить "
+            "содержимое или добавить в конец. Библиотека — "
+            "меню «Скрипты → Управление скриптами…»."
+        )
+        self.cb_script.view().setItemDelegate(
+            ComboItemDelegate(self.cb_script.view())
+        )
+        self.cb_script.setVisible(False)
+        run_row.addWidget(self.cb_script)
+
         run_row.addStretch()
 
         self.btn_run = QPushButton("Выполнить")
@@ -597,6 +619,7 @@ class SqlConsolePanel(QWidget):
         self.cb_server.currentIndexChanged.connect(self._on_server_index_changed)
         self.cb_server.currentIndexChanged.connect(self._completion_server_changed)
         self.cb_database.currentTextChanged.connect(self._catalog_schedule)
+        self.cb_script.currentIndexChanged.connect(self._on_script_picked)
         self.chk_all_servers.toggled.connect(self.scopeChanged)
         self.chk_all_databases.toggled.connect(self.scopeChanged)
         self.chk_all_servers.toggled.connect(self._completion_scope_changed)
@@ -626,6 +649,7 @@ class SqlConsolePanel(QWidget):
         self.btn_stop.setEnabled(busy)
         self.chk_all_servers.setEnabled(not busy)
         self.chk_all_databases.setEnabled(not busy)
+        self.cb_script.setEnabled(not busy)
         self.scopeEnabledChanged.emit(not busy)
 
         self.cb_server.setEnabled(
@@ -705,8 +729,57 @@ class SqlConsolePanel(QWidget):
         self._completer.set_catalog(tables, columns)
 
     def set_scripts(self, scripts: list[dict]) -> None:
-        """Обновляет подсказки скриптов (из MainWindow)."""
-        self._completer.set_scripts(scripts)
+        """Обновляет подсказки скриптов и список выбора над редактором."""
+        self._scripts = list(scripts or [])
+        self._completer.set_scripts(self._scripts)
+        self._rebuild_script_combo()
+
+    def _rebuild_script_combo(self) -> None:
+        """Перестраивает комбо скриптов: пункт = имя, данные = тело."""
+        self.cb_script.blockSignals(True)
+        self.cb_script.clear()
+        for script in self._scripts:
+            name = str(script.get("name") or "").strip()
+            body = script.get("body")
+            if not name or not isinstance(body, str) or not body.strip():
+                continue
+            self.cb_script.addItem(name, body)
+            index = self.cb_script.count() - 1
+            self.cb_script.setItemIcon(
+                index, icon("content_copy", 16, "@icon_accent")
+            )
+        self.cb_script.setCurrentIndex(-1)
+        self.cb_script.setEditText("")
+        self.cb_script.blockSignals(False)
+
+        self.cb_script.setVisible(bool(self.cb_script.count()))
+        self.cb_script.refresh_completion()
+
+    def _on_script_picked(self, index: int) -> None:
+        """Выбор скрипта: сигнал наружу (вставка в консоль) и сброс комбо.
+
+        QCompleter приходит двумя путями (activated и popup.clicked), плюс
+        сброс индекса внутри обработчика порождает повторный
+        currentIndexChanged — поэтому выбор обрабатывается один раз, а
+        сброс откладывается до возврата в цикл событий.
+        """
+        if index < 0 or self._pick_pending:
+            return
+        body = self.cb_script.itemData(index) or ""
+        self._pick_pending = True
+        QTimer.singleShot(0, self._reset_script_combo)
+
+        if isinstance(body, str) and body.strip():
+            self.scriptPickRequested.emit(body)
+
+    def _reset_script_combo(self) -> None:
+        """Возвращает комбо скриптов в состояние «ничего не выбрано»."""
+        self._pick_pending = False
+        self.cb_script.blockSignals(True)
+        self.cb_script.setCurrentIndex(-1)
+        self.cb_script.setEditText("")
+        self.cb_script.blockSignals(False)
+        self.cb_script._completer.popup().hide()
 
     def clear_completion(self) -> None:
         """Сбрасывает каталог подсказок (смена сервера/скоупа)."""
@@ -839,6 +912,7 @@ class SqlConsolePanel(QWidget):
         self.btn_search_stop.setIcon(icon("stop", 16, "@icon_danger"))
         self.btn_refresh_db.setIcon(icon("refresh"))
         self.btn_clear.setIcon(icon("delete_outline"))
+        self._rebuild_script_combo()
 
     def search_mask(self) -> str:
         return self.ed_search_mask.text().strip()

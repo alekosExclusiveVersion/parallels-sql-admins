@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from gui.dialog_reset import enable_field_reset
+
 
 class RestoreDatabaseDialog(QDialog):
     def __init__(self, parent=None):
@@ -67,6 +69,8 @@ class RestoreDatabaseDialog(QDialog):
         layout.addWidget(self._replace_cb)
         layout.addSpacing(16)
         layout.addLayout(btn_row)
+        enable_field_reset(self)
+
 
     def _browse(self):
         path, _ = QFileDialog.getOpenFileName(

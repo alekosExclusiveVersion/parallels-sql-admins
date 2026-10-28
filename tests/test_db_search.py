@@ -200,11 +200,11 @@ class TestDatabaseSearch(unittest.TestCase):
         self.assertEqual(sites.get("ar_shop_ru"), "shop.ru")
         self.assertEqual(sites.get("ar_example_com"), "")
         conn = factory.conns[0]
-        self.assertEqual(len(conn.executions), 5)
-        self.assertIn("SHOW DATABASES", conn.executions[1][0])
-        self.assertIn("information_schema.tables", conn.executions[2][0])
+        self.assertEqual(len(conn.executions), 4)
+        self.assertIn("SHOW DATABASES", conn.executions[0][0])
+        self.assertIn("information_schema.tables", conn.executions[1][0])
+        self.assertIn("stg_value", conn.executions[2][0])
         self.assertIn("stg_value", conn.executions[3][0])
-        self.assertIn("stg_value", conn.executions[4][0])
 
     def test_domain_mask_merges_settings_results(self):
         show = [{"Database": "ar_example_com"}]
@@ -270,7 +270,7 @@ class TestDatabaseSearch(unittest.TestCase):
         # база по имени всё равно находится через SHOW LIKE '%example%'
         self.assertEqual(_db_names(result), ["ar_example_com"])
         conn = factory.conns[0]
-        self.assertEqual(len(conn.executions), 8)
+        self.assertEqual(len(conn.executions), 7)
 
     def test_empty_mask_returns_empty(self):
         client, factory = self._client([{"Database": "ar_example_com"}])
@@ -292,8 +292,8 @@ class TestDatabaseSearch(unittest.TestCase):
         self.assertIn("autoprice_activautoru", names)
         self.assertIn("ar_activautoru", names)
         conn = factory.conns[0]
-        self.assertEqual(len(conn.executions), 6)
-        base_sql = conn.executions[4][0]
+        self.assertEqual(len(conn.executions), 5)
+        base_sql = conn.executions[3][0]
         self.assertIn("SHOW DATABASES", base_sql)
         self.assertIn("activauto", base_sql)
 
@@ -306,8 +306,8 @@ class TestDatabaseSearch(unittest.TestCase):
 
         self.assertEqual(_db_names(result), ["a_ru"])
         conn = factory.conns[0]
-        # 4 queries: SET SESSION, SHOW (mask), SHOW (list), site-fill-фильтр
-        self.assertEqual(len(conn.executions), 4)
+        # 3 queries: SHOW (mask), SHOW (list), site-fill-фильтр
+        self.assertEqual(len(conn.executions), 3)
 
     def test_base_name_with_wildcards_skipped(self):
         """*shop*.com → base='*shop*' (содержит *) → пропуск."""
@@ -317,8 +317,8 @@ class TestDatabaseSearch(unittest.TestCase):
         result = client.search_databases("h1", "*shop*.com")
 
         conn = factory.conns[0]
-        # 4 queries: SET SESSION, SHOW (mask), SHOW (list), site-fill-фильтр
-        self.assertEqual(len(conn.executions), 4)
+        # 3 queries: SHOW (mask), SHOW (list), site-fill-фильтр
+        self.assertEqual(len(conn.executions), 3)
 
     def test_base_name_with_underscore_skipped(self):
         """my_site.com → base='my_site' (содержит _) → пропуск."""
@@ -328,7 +328,7 @@ class TestDatabaseSearch(unittest.TestCase):
         result = client.search_databases("h1", "my_site.com")
 
         conn = factory.conns[0]
-        self.assertEqual(len(conn.executions), 4)
+        self.assertEqual(len(conn.executions), 3)
 
     def test_domain_returns_site(self):
         """Поиск по домену возвращает site для найденных БД."""

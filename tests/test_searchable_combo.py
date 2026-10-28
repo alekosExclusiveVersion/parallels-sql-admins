@@ -86,10 +86,12 @@ class SearchableComboBoxTest(unittest.TestCase):
         combo._on_text_changed("TRADE")
         self.assertEqual(self._rows(combo), ["Prod-01", "Prod-02"])
 
-    def test_empty_query_returns_all(self):
+    def test_empty_query_keeps_model_and_deselects(self):
         combo = self._make()
+        combo.setCurrentIndex(0)
         combo._on_text_changed("")
-        self.assertEqual(len(self._rows(combo)), 3)
+        self.assertEqual(combo.currentIndex(), -1)
+        self.assertFalse(combo._completer.popup().isVisible())
 
     def test_typing_back_to_selected_item_refreshes_model(self):
         combo = self._make()
@@ -99,10 +101,11 @@ class SearchableComboBoxTest(unittest.TestCase):
         self.assertEqual(self._rows(combo), ["Prod-01"])
         self.assertFalse(combo._completer.popup().isVisible())
 
-    def test_empty_text_refreshes_model_and_hides_popup(self):
+    def test_empty_text_deselects_and_hides_popup(self):
         combo = self._make()
+        combo.setCurrentIndex(1)
         combo._on_text_changed("")
-        self.assertEqual(len(self._rows(combo)), 3)
+        self.assertEqual(combo.currentIndex(), -1)
         self.assertFalse(combo._completer.popup().isVisible())
 
     def test_refresh_completion_after_rebuild(self):
@@ -146,7 +149,7 @@ class SearchableComboBoxTest(unittest.TestCase):
 
     def test_engine_icon_set_on_popup_item(self):
         combo = self._make_with_engines()
-        combo._on_text_changed("")
+        combo._completer.refresh(combo._combo_items(), "", combo._item_icon_name)
         model = combo._completer.model()
         icon_by_text = {
             model.item(i).text(): model.item(i).icon() for i in range(model.rowCount())
@@ -250,6 +253,118 @@ class SearchableComboBoxTest(unittest.TestCase):
             self._send_key(popup, Qt.Key_Down)
 
         self.assertEqual(model.rowCount(), initial_count)
+
+
+class SearchableComboFullClickTest(unittest.TestCase):
+    """Клик в правой области поля тоже открывает попап."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _make(self):
+        combo = SearchableComboBox()
+        combo.addItem("Prod-01", "p7ru1.tradesoft.ru")
+        combo.addItem("Prod-02", "p5g21.tradesoft.ru")
+        combo.addItem("Dev", "dev.local")
+
+        def cleanup():
+            combo.deleteLater()
+            combo.close()
+
+        self.addCleanup(cleanup)
+        return combo
+
+    def _combo_click(self, combo, x):
+        event = QMouseEvent(
+            QEvent.MouseButtonPress,
+            QPointF(x, 5),
+            QPointF(0, 0),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        combo.mousePressEvent(event)
+        QApplication.processEvents()
+
+    def _combo_width(self, combo):
+        return max(combo.width(), 180)
+
+    def test_click_right_area_opens_popup(self):
+        combo = self._make()
+
+        self._combo_click(combo, self._combo_width(combo) - 10)
+
+        self.assertTrue(combo._completer.popup().isVisible())
+
+    def test_click_left_area_opens_popup(self):
+        combo = self._make()
+
+        self._combo_click(combo, 30)
+
+        self.assertTrue(combo._completer.popup().isVisible())
+
+    def test_click_on_empty_combo_no_popup(self):
+        combo = SearchableComboBox()
+
+        def cleanup():
+            combo.deleteLater()
+            combo.close()
+
+        self.addCleanup(cleanup)
+        self._combo_click(combo, 30)
+
+        self.assertFalse(combo._completer.popup().isVisible())
+
+
+class ConsoleFieldResetTest(unittest.TestCase):
+    """Крестик в полях выбора сервера, БД и скрипта SQL-консоли."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _panel(self):
+        from gui.sql_console import SqlConsolePanel
+
+        panel = SqlConsolePanel()
+
+        def cleanup():
+            panel.deleteLater()
+            panel.close()
+
+        self.addCleanup(cleanup)
+        return panel
+
+    def test_combos_have_clear_buttons_and_no_reset_widgets(self):
+        panel = self._panel()
+        self.assertTrue(panel.cb_server.lineEdit().isClearButtonEnabled())
+        self.assertTrue(panel.cb_database.lineEdit().isClearButtonEnabled())
+        self.assertTrue(panel.cb_script.lineEdit().isClearButtonEnabled())
+        self.assertFalse(hasattr(panel, "btn_server_reset"))
+        self.assertFalse(hasattr(panel, "btn_database_reset"))
+
+    def test_clearing_server_text_resets_selection_and_database(self):
+        panel = self._panel()
+        panel.cb_server.addItem("srv1", "srv1.tradesoft.ru")
+        panel.cb_server.setCurrentIndex(0)
+        panel.cb_database.addItem("db1", "db1")
+        panel.cb_database.setCurrentIndex(0)
+
+        panel.cb_server.lineEdit().clear()
+
+        self.assertEqual(panel.cb_server.currentIndex(), -1)
+        self.assertEqual(panel.cb_server.currentText(), "")
+
+    def test_clearing_database_text_resets_selection(self):
+        panel = self._panel()
+        panel.cb_database.addItem("db1", "db1")
+        panel.cb_database.setCurrentIndex(0)
+
+        panel.cb_database.lineEdit().clear()
+
+        self.assertEqual(panel.cb_database.currentIndex(), -1)
+        self.assertEqual(panel.cb_database.currentText(), "")
 
 
 if __name__ == "__main__":

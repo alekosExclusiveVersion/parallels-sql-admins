@@ -90,3 +90,21 @@ def humanize_db_error(message: str) -> str:
         if pattern.search(lowered) or pattern.search(text):
             return response
     return text
+
+
+_AUTH_PATTERN = re.compile(
+    r"access denied for user|login failed|logon failed|"
+    r"failed to (login|logon)|invalid (user|login|logon)|"
+    r"password authentication failed|authentication failed for user|"
+    r"incorrect (user|login|password)|"
+    r"\(1045\)|\(18456\)|sqlstate 28000"
+)
+
+
+def is_auth_error(message: str) -> bool:
+    """True, если ошибка вызвана неверными учётными данными.
+
+    Уже, чем humanize_db_error: сетевые сбои и «нет прав» сюда не попадают,
+    чтобы не предлагать ввод логина/пароля там, где он не поможет.
+    """
+    return bool(_AUTH_PATTERN.search(str(message or "").lower()))

@@ -33,6 +33,7 @@ from common.conn_pool import ConnectionPool
 from common.logger import logger
 from common.server_registry import registry
 from common.sql_builder import sql_builder
+from common.sql_editing import _tokens
 
 # Системные БД PostgreSQL — не показываем и не считаем в дереве.
 _PG_SYSTEM_DBS = frozenset(
@@ -100,6 +101,7 @@ class PgsqlClient:
                     dbname=database,
                     connect_timeout=self.cfg.connect_timeout,
                     row_factory=dict_row,
+                    autocommit=True,
                     keepalives_idle=30,
                     keepalives_interval=10,
                     keepalives_count=3,
@@ -159,6 +161,10 @@ class PgsqlClient:
     def close_all(self) -> None:
         self._pool.close_all()
 
+    def close_host(self, host: str) -> int:
+        """Сбрасывает соединения всех баз хоста (смена реквизитов)."""
+        return self._pool.close_host(host)
+
     @contextmanager
     def connect(self, host: str, database: str | None = None):
         conn = self._pool.acquire(host, database)
@@ -210,6 +216,10 @@ class PgsqlClient:
         return f"datname NOT IN ({system})"
 
     def list_databases_conn(self, conn) -> list[str]:
+        # Префикс database_prefix (например 'ar_') и exclude_database_regex —
+        # MySQL-конвенция именования; для PgSQL не применяются, иначе список
+        # БД в SQL-консоли оказывается пустым. Исключаются только системные
+        # и ignore_databases (фильтр на уровне SQL выше).
         rows = self.execute_on_connection(
             conn,
             "SELECT datname AS db "
@@ -218,21 +228,14 @@ class PgsqlClient:
             "ORDER BY datname",
         )
 
-        prefix = config.filter.database_prefix
-        pattern = config.filter.exclude_database_regex
-
         return [
             row["db"]
             for row in rows
-            if (
-                row.get("db")
-                and row["db"].startswith(prefix)
-                and not re.search(pattern, row["db"])
-            )
+            if row.get("db")
         ]
 
     def list_databases(self, host: str) -> list[str]:
-        """Список БД на сервере с учётом фильтров (prefix/regex/ignore)."""
+        """Все БД сервера (кроме системных и ignore_databases)."""
         with self.connect(host) as conn:
             return self.list_databases_conn(conn)
 
@@ -576,6 +579,156 @@ ORDER BY total DESC
               params: tuple[Any, ...] | None = None) -> list[dict]:
         with self.connect(host, database) as conn:
             return self.execute_on_connection(conn, sql, params)
+
+    # ----------------------------------------------------------
+    # Регистр имён таблиц (консоль): автокавычки + подсказка
+    # ----------------------------------------------------------
+
+    # Позиции, после которых может стоять имя таблицы.
+    _TABLE_CLAUSES = frozenset({"FROM", "JOIN", "UPDATE", "INTO", "TABLE"})
+
+    # Слова, которые именем таблицы быть не могут (ложные срабатывания
+    # после UPDATE/INTO в служебных конструкциях).
+    _SKIP_WORDS = frozenset({
+        "SELECT", "WHERE", "SET", "VALUES", "RETURNING", "GROUP",
+        "ORDER", "LIMIT", "HAVING", "UNION", "EXCEPT", "INTERSECT",
+        "ON", "USING", "AS", "ALL", "DISTINCT", "LATERAL", "ONLY",
+        "OUTER", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "NATURAL",
+    })
+
+    def table_name_map(self, host: str, database: str) -> dict[str, str]:
+        """lower(имя) → точное имя таблицы БД.
+
+        Только однозначные совпадения с нестрочным именем: строчные
+        таблицы PostgreSQL находит сам, неоднозначные не трогаем.
+        """
+        rows = self.query(
+            host,
+            "SELECT tablename AS t FROM pg_tables "
+            "WHERE schemaname NOT IN ('pg_catalog', 'information_schema')",
+            database,
+        )
+
+        groups: dict[str, list[str]] = {}
+        for row in rows:
+            name = row.get("t")
+            if not name or name == name.lower():
+                continue
+            groups.setdefault(name.lower(), []).append(name)
+
+        return {
+            key: names[0]
+            for key, names in groups.items()
+            if len(names) == 1
+        }
+
+    def prepare_statements(
+        self,
+        host: str,
+        database: str | None,
+        statements: list[str],
+    ) -> list[str]:
+        """Подставляет кавычки с точным регистром в имена таблиц.
+
+        PostgreSQL сворачивает незакавыченные идентификаторы в нижний
+        регистр, поэтому `FROM dbversion` не находит `DbVersion`.
+        Переписываются только простые случаи: голое слово сразу после
+        FROM/JOIN/UPDATE/INTO/TABLE с единственным совпадением
+        без учёта регистра. Уже закавыченное, квалифицированное
+        (схема.таблица) и вызовы функций не трогаются. При любой
+        проблеме возвращается исходный список.
+        """
+        if not database or not statements:
+            return list(statements)
+
+        try:
+            mapping = self.table_name_map(host, database)
+        except Exception:
+            return list(statements)
+
+        if not mapping:
+            return list(statements)
+
+        return [self._quote_tables(sql, mapping) for sql in statements]
+
+    def _quote_tables(self, sql: str, mapping: dict[str, str]) -> str:
+        try:
+            toks = list(_tokens(sql))
+        except Exception:
+            return sql
+
+        edits = []
+        for i, (tok, _start, end) in enumerate(toks):
+            if tok.upper() not in self._TABLE_CLAUSES:
+                continue
+            j = i + 1
+            if j >= len(toks):
+                continue
+            name, name_start, name_end = toks[j]
+            if sql[end:name_start].strip():
+                continue
+            if j + 1 < len(toks) and toks[j + 1][0] == ".":
+                continue
+            if j + 1 < len(toks) and toks[j + 1][0] == "(":
+                # Вызов табличной функции (generate_series(...)), но не
+                # список колонок в INSERT INTO tbl (...).
+                if tok.upper() != "INTO":
+                    continue
+            if not name or not (name[0].isalpha() or name[0] in "_$"):
+                continue
+            if name.upper() in self._SKIP_WORDS:
+                continue
+            exact = mapping.get(name.lower())
+            if not exact:
+                continue
+            edits.append((name_start, name_end, f'"{exact}"'))
+
+        for start, end, replacement in reversed(edits):
+            sql = sql[:start] + replacement + sql[end:]
+
+        return sql
+
+    def error_hint(self, host: str, database: str | None, ex: Exception) -> str:
+        """Подсказка при обращении к несуществующей таблице."""
+        try:
+            from psycopg import errors as _pg_errors
+        except ImportError:
+            return ""
+
+        if not isinstance(ex, _pg_errors.UndefinedTable):
+            return ""
+        if not database:
+            return ""
+
+        match = re.search(r'relation "([^"]+)" does not exist', str(ex))
+        if not match:
+            return ""
+
+        bare = match.group(1).split(".")[-1].strip('"')
+        if not bare:
+            return ""
+
+        try:
+            rows = self.query(
+                host,
+                "SELECT tablename AS t FROM pg_tables "
+                "WHERE tablename ILIKE %s "
+                "AND schemaname NOT IN ('pg_catalog', 'information_schema') "
+                "LIMIT 6",
+                database,
+                (bare,),
+            )
+        except Exception:
+            return ""
+
+        candidates = sorted(
+            {row["t"] for row in rows if row.get("t") and row["t"] != bare}
+        )
+        if not candidates:
+            return ""
+
+        quoted = ", ".join(f'"{name}"' for name in candidates)
+        return f"Возможно, вы имели в виду: {quoted}?"
 
     def has_cfg_settings_conn(self, conn, database: str) -> bool:
         return False

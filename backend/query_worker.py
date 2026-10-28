@@ -120,6 +120,35 @@ class QueryWorker(QObject):
         with self._active_lock:
             self._active_conns.clear()
 
+    @staticmethod
+    def _prepare_user_statements(client, host, database, statements):
+        """Даёт движку шанс поправить операторы (pgsql: регистр таблиц).
+
+        Движки без prepare_statements выполняют исходный текст.
+        Подготовка никогда не роняет выполнение: при сбое — как есть.
+        """
+        prepare = getattr(client, "prepare_statements", None)
+        if prepare is None:
+            return statements
+        try:
+            return prepare(host, database, statements)
+        except Exception:
+            logger.warning(f"{host}: prepare_statements failed, running as-is")
+            return statements
+
+    @staticmethod
+    def _error_text(client, host, database, ex):
+        """Текст ошибки + движковая подсказка (pgsql: did-you-mean)."""
+        message = str(ex)
+        hint = getattr(client, "error_hint", None)
+        if hint is None:
+            return message
+        try:
+            extra = hint(host, database, ex)
+        except Exception:
+            return message
+        return f"{message}\n{extra}" if extra else message
+
     def active_connections(self):
         """Список (host, connection_id) выполняющихся запросов."""
         with self._active_lock:
@@ -309,6 +338,10 @@ class QueryWorker(QObject):
         client = client_for(self._host)
         started_at = time.perf_counter()
 
+        statements = self._prepare_user_statements(
+            client, self._host, self._database, self._statements,
+        )
+
         try:
             logger.action(
                 f"TRACE dispatch: acquiring connection for {self._host}.{self._database}"
@@ -319,7 +352,7 @@ class QueryWorker(QObject):
                 )
                 try:
                     per_statement = []
-                    for statement in self._statements:
+                    for statement in statements:
                         if self._stop:
                             break
                         per_statement.append(
@@ -347,7 +380,11 @@ class QueryWorker(QObject):
             if self._stop:
                 self.stopped.emit(0, 1)
             else:
-                self.error.emit(str(ex))
+                self.error.emit(
+                    self._error_text(
+                        client, self._host, self._database, ex,
+                    )
+                )
 
     def _emit_edit_meta(
         self, conn, host: str, database: str | None,
@@ -430,6 +467,10 @@ class QueryWorker(QObject):
 
             client = client_for(host_name)
 
+            statements = self._prepare_user_statements(
+                client, host_name, db_name, self._statements,
+            )
+
             try:
                 with client.connect(host_name, db_name) as conn:
                     self._register_active(
@@ -437,7 +478,7 @@ class QueryWorker(QObject):
                     )
                     try:
                         per_statement = []
-                        for statement in self._statements:
+                        for statement in statements:
                             if self._stop:
                                 break
                             per_statement.append(
@@ -467,7 +508,11 @@ class QueryWorker(QObject):
             except Exception as ex:
                 logger.exception(ex)
                 if not self._stop:
-                    self.error_target.emit(host_name, db_name, str(ex))
+                    self.error_target.emit(
+                        host_name,
+                        db_name,
+                        self._error_text(client, host_name, db_name, ex),
+                    )
 
         executor = ThreadPoolExecutor(
             max_workers=workers,
@@ -492,11 +537,15 @@ class QueryWorker(QObject):
         в CSV. Состояние (колонки, заголовок, счётчики) ведётся в `state`."""
         client = client_for(host_name)
 
+        statements = self._prepare_user_statements(
+            client, host_name, db_name, self._statements,
+        )
+
         with client.connect(host_name, db_name) as conn:
             self._register_active(host_name, client.connection_id(conn))
 
             try:
-                for statement in self._statements:
+                for statement in statements:
                     if self._stop:
                         break
 
@@ -593,7 +642,17 @@ class QueryWorker(QObject):
                         logger.exception(ex)
                         if self._stop:
                             break
-                        self.error_target.emit(host_name, db_name, str(ex))
+                        try:
+                            export_client = client_for(host_name)
+                        except Exception:
+                            export_client = None
+                        self.error_target.emit(
+                            host_name,
+                            db_name,
+                            self._error_text(
+                                export_client, host_name, db_name, ex,
+                            ),
+                        )
                         continue
 
                     done += 1

@@ -56,6 +56,7 @@ from common.server_registry import (
     ServerSpec,
     build_select_sql,
     registry,
+    reset_connections,
 )
 from gui.icons import icon, set_icon_theme
 from gui import styles as theme_styles
@@ -63,7 +64,7 @@ from gui.widgets.status_bar import StatusBar
 from gui.widgets.collapsible_splitter import CollapsibleSplitter
 from gui.widgets.help_icon import HelpIcon
 from gui.widgets.copyable_alert import CopyableMessageBox
-from common.db_errors import humanize_db_error
+from common.db_errors import humanize_db_error, is_auth_error
 from gui.worker_thread import WorkerHost
 from gui.servers_tree import ServersTree
 from gui.result_table import ResultTable
@@ -73,6 +74,7 @@ from gui.script_tab import ScriptTab
 from gui.scripts_manager_dialog import ScriptsManagerDialog
 from gui.server_dialog import ServerDialog
 from gui.master_password_dialog import MasterPasswordDialog
+from gui.credentials_dialog import CredentialsDialog
 from gui.settings_dialog import SettingsDialog
 from gui.connection_strings_dialog import ConnectionStringsDialog
 
@@ -109,6 +111,11 @@ class MainWindow(QWidget):
         self.repository = Repository()
 
         self._last_sql_request = None   # (targets, sql) последнего запроса SQL Console
+
+        # Повтор запроса после ввода реквизитов: не чаще одного раза на запуск.
+        self._cred_retry_done = False
+        self._cred_retry_pending = None
+        self._retry_action = None
 
         # Контекст редактирования ячеек Results (см. _on_edit_meta).
         self._sql_edit_ctx: dict | None = None
@@ -156,6 +163,7 @@ class MainWindow(QWidget):
 
         self._ensure_vault_at_startup()
         self._load_servers()
+        self._update_completion_scripts()
 
     # ----------------------------------------------------------
     # Backend
@@ -451,6 +459,175 @@ class MainWindow(QWidget):
         dialog.exec()
         self._load_servers()
 
+    # ----------------------------------------------------------
+    # Учётные данные серверов
+    # ----------------------------------------------------------
+
+    @staticmethod
+    def _server_label(host_key: str) -> str:
+        spec = registry.find(host_key)
+        return spec.display_name() if spec is not None else host_key
+
+    def _ensure_credentials(self, host_key: str, message: str = "") -> bool:
+        """Запрашивает логин/пароль, если для сервера они не заданы.
+
+        Возвращает True, если подключение можно продолжать.
+        """
+        host_key = (host_key or "").strip()
+
+        if not host_key or not registry.needs_credentials(host_key):
+            return True
+
+        return self._prompt_credentials(host_key, message)
+
+    def _prompt_credentials(self, host_key: str, message: str = "") -> bool:
+        """Показывает диалог реквизитов и сохраняет введённое."""
+        host_key = (host_key or "").strip()
+
+        if not host_key:
+            return False
+
+        spec = registry.find(host_key)
+        user = spec.user if spec is not None else ""
+
+        if not user:
+            user, _, _, _ = registry.credentials_for(host_key)
+
+        dialog = CredentialsDialog(
+            self._server_label(host_key),
+            user=user,
+            parent=self,
+            message=message,
+        )
+
+        if dialog.exec() != CredentialsDialog.Accepted:
+            self.append_log(
+                "WARNING",
+                f"Для сервера «{self._server_label(host_key)}» не введены "
+                f"учётные данные — подключение отменено.",
+            )
+            return False
+
+        persist = dialog.remember()
+
+        if persist and not self._ensure_vault_for_write():
+            persist = False
+
+        saved = registry.set_credentials(
+            host_key, dialog.user(), dialog.password(), persist=persist,
+        )
+        reset_connections(host_key)
+
+        logger.action(
+            f"Credentials set: {host_key}, persisted={saved}"
+        )
+        self.append_log(
+            "INFO",
+            f"Учётные данные для «{self._server_label(host_key)}» "
+            f"{'сохранены' if saved else 'приняты до перезапуска'}.",
+        )
+        return True
+
+    def _edit_server_credentials(self, host_key: str) -> None:
+        """Ввод/замена реквизитов сервера из контекстного меню."""
+        host_key = (host_key or "").strip()
+
+        if not host_key:
+            return
+
+        spec = registry.find(host_key)
+
+        if spec is None or spec.engine == ENGINE_SQLITE:
+            return
+
+        self._prompt_credentials(host_key)
+
+    def _skip_servers_without_credentials(
+        self, hosts: list[str], action: str,
+    ) -> list[str]:
+        """Исключает серверы без реквизитов (массовые операции)."""
+        missing = [
+            h for h in hosts
+            if registry.needs_credentials(h)
+        ]
+
+        if not missing:
+            return list(hosts)
+
+        names = ", ".join(self._server_label(h) for h in missing)
+
+        self.append_log(
+            "WARNING",
+            f"{action}: пропущено серверов без учётных данных — "
+            f"{len(missing)}: {names}",
+        )
+        logger.action(
+            f"{action}: skipped {len(missing)} server(s) without credentials"
+        )
+
+        skip = set(missing)
+
+        return [h for h in hosts if h not in skip]
+
+    def _ensure_target_credentials(self, targets: list) -> list:
+        """Реквизиты для целей SQL-запроса.
+
+        Одна цель — интерактивный запрос; несколько — серверы без реквизитов
+        пропускаются с записью в журнал.
+        """
+        hosts = list(dict.fromkeys(host for host, _ in targets))
+
+        if len(hosts) == 1:
+            if not self._ensure_credentials(hosts[0]):
+                self.status_bar.set_status(
+                    "Запрос не выполнен: не введены учётные данные."
+                )
+                return []
+            return list(targets)
+
+        allowed = set(
+            self._skip_servers_without_credentials(hosts, "SQL")
+        )
+
+        if len(allowed) < len(hosts):
+            self.status_bar.set_status(
+                "Часть серверов пропущена: не заданы учётные данные."
+            )
+
+        return [t for t in targets if t[0] in allowed]
+
+    def _offer_credentials_retry(self, host_key: str, message: str) -> bool:
+        """Предлагает ввести реквизиты после ошибки входа.
+
+        Возвращает True, если реквизиты введены и запрос нужно повторить.
+        """
+        if self._cred_retry_done or not is_auth_error(message):
+            return False
+
+        host_key = (host_key or "").strip()
+
+        if not host_key:
+            return False
+
+        self._cred_retry_done = True
+
+        answer = CopyableMessageBox.question(
+            self,
+            "Не удалось войти",
+            f"Сервер «{self._server_label(host_key)}» отклонил учётные "
+            f"данные.\n\nВвести логин и пароль и повторить запрос?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+
+        if answer != QMessageBox.Yes:
+            return False
+
+        return self._ensure_credentials(
+            host_key,
+            message="Сервер отклонил предыдущие учётные данные.",
+        )
+
     def _toggle_scope_checkboxes(self, visible: bool) -> None:
         self.panel.set_scope_checkboxes_visible(visible)
         theme_styles.save_scope_checkboxes_visible(visible)
@@ -476,7 +653,7 @@ class MainWindow(QWidget):
         self.panel.set_servers(labels)
 
         if self.panel.current_host().strip():
-            self._sql_refresh_databases()
+            self._sql_refresh_databases(interactive=False)
 
         count = len(hosts)
 
@@ -580,6 +757,9 @@ class MainWindow(QWidget):
         if engine not in (ENGINE_MSSQL, ENGINE_PGSQL, ENGINE_SQLITE):
             return
 
+        if not self._ensure_credentials(server):
+            return
+
         if self.db_op_thread.isRunning():
             self.status_bar.set_status("Операция уже выполняется…")
             logger.warning(
@@ -631,6 +811,9 @@ class MainWindow(QWidget):
         if engine != ENGINE_MSSQL:
             return
 
+        if not self._ensure_credentials(server):
+            return
+
         if self.db_op_thread.isRunning():
             self.status_bar.set_status("Операция уже выполняется…")
             logger.warning(
@@ -662,12 +845,44 @@ class MainWindow(QWidget):
         )
         self.db_op_thread.start()
 
-    def _shrink_log(self, server: str, database: str) -> None:
+    def _db_files_size(self, server: str, database: str) -> None:
         if not server or not database:
             return
 
         engine = registry.engine(server)
         if engine != ENGINE_MSSQL:
+            return
+
+        if not self._ensure_credentials(server):
+            return
+
+        if self.db_op_thread.isRunning():
+            self.status_bar.set_status("Операция уже выполняется…")
+            logger.warning(
+                f"DB files {server}.{database} skipped: db_op thread busy"
+            )
+            return
+
+        self.append_log(
+            "INFO",
+            f"Чтение размеров файлов БД «{database}» "
+            f"на сервере «{server}»…",
+        )
+        logger.action(f"DB files requested: {server}.{database}")
+
+        self.db_op_worker.set_request(
+            server, database, DbOperation.DB_FILES,
+        )
+        self.db_op_thread.start()
+
+    def _shrink_log(self, server: str, database: str) -> None:
+        if not server or not database:            return
+
+        engine = registry.engine(server)
+        if engine != ENGINE_MSSQL:
+            return
+
+        if not self._ensure_credentials(server):
             return
 
         if self.db_op_thread.isRunning():
@@ -711,6 +926,9 @@ class MainWindow(QWidget):
         if engine != ENGINE_MSSQL:
             return
 
+        if not self._ensure_credentials(server):
+            return
+
         if self.db_op_thread.isRunning():
             self.status_bar.set_status("Операция уже выполняется…")
             logger.warning(
@@ -746,6 +964,9 @@ class MainWindow(QWidget):
 
         engine = registry.engine(server)
         if engine != ENGINE_MSSQL:
+            return
+
+        if not self._ensure_credentials(server):
             return
 
         if self.db_op_thread.isRunning():
@@ -826,7 +1047,41 @@ class MainWindow(QWidget):
                 )
                 logger.action(f"Log shrunk: {host}.{database}")
 
-        self._sql_refresh_databases()
+            case DbOperation.DB_FILES:
+                self._show_db_files(host, database)
+
+        if op != DbOperation.DB_FILES:
+            self._sql_refresh_databases()
+
+    def _show_db_files(self, host: str, database: str) -> None:
+        files = self.db_op_worker.result or []
+        data = sum(f["bytes"] for f in files if f["type"] == "ROWS")
+        log = sum(f["bytes"] for f in files if f["type"] == "LOG")
+
+        fmt = self.servers_tree.format_size
+        lines = [f"БД «{database}»:\n"]
+        for f in files:
+            kind = "Данные" if f["type"] == "ROWS" else (
+                "Журнал" if f["type"] == "LOG" else f["type"]
+            )
+            logical = f" ({f['name']})" if f["name"] else ""
+            lines.append(
+                f"{kind}{logical}: {fmt(f['bytes'])}  —  {f['file']}"
+            )
+        lines.append("\nРазмер (как в SSMS):")
+        lines.append(f"Данные: {fmt(data)}   Журнал: {fmt(log)}   "
+                     f"Всего: {fmt(data + log)}")
+
+        self.append_log(
+            "SUCCESS",
+            f"Размеры файлов БД «{database}» на сервере «{host}» "
+            "получены.",
+        )
+        CopyableMessageBox.information(
+            self,
+            "Размер файлов БД",
+            "\n".join(lines),
+        )
 
     def _db_op_error(self, message: str) -> None:
         host = self.db_op_worker._host
@@ -839,6 +1094,7 @@ class MainWindow(QWidget):
             DbOperation.ATTACH: "присоединения",
             DbOperation.RESTORE: "восстановления",
             DbOperation.SHRINK_LOG: "очистки журнала транзакций",
+            DbOperation.DB_FILES: "чтения размеров файлов",
         }
         op_name = op_names.get(op, op)
 
@@ -922,6 +1178,16 @@ class MainWindow(QWidget):
                 "INFO",
                 f"Skipped {skipped} MSSQL server(s) — check is MySQL-only.",
             )
+
+        mysql_servers = self._skip_servers_without_credentials(
+            mysql_servers, "Проверка",
+        )
+
+        if not mysql_servers:
+            self.status_bar.set_status(
+                "Нет серверов с заданными учётными данными."
+            )
+            return
 
         logger.action(
             f"Check run: {len(mysql_servers)} server(s)"
@@ -1373,6 +1639,10 @@ class MainWindow(QWidget):
             self._edit_server
         )
 
+        self.servers_tree.credentialsRequested.connect(
+            self._edit_server_credentials
+        )
+
         self.servers_tree.removeServerRequested.connect(
             self._remove_server
         )
@@ -1387,6 +1657,9 @@ class MainWindow(QWidget):
 
         self.servers_tree.shrinkLogRequested.connect(
             self._shrink_log
+        )
+        self.servers_tree.fileSizesRequested.connect(
+            self._db_files_size
         )
 
         self.servers_tree.attachDatabaseRequested.connect(
@@ -1476,6 +1749,10 @@ class MainWindow(QWidget):
         )
 
         self.panel.scriptInsertFromEditor.connect(
+            self._script_insert_to_console
+        )
+
+        self.panel.scriptPickRequested.connect(
             self._script_insert_to_console
         )
 
@@ -1708,7 +1985,7 @@ class MainWindow(QWidget):
     # SQL Console
     # ----------------------------------------------------------
 
-    def _run_sql(self, sql: str):
+    def _run_sql(self, sql: str, retry: bool = False):
 
         if self._sql_busy:
             logger.action(
@@ -1726,10 +2003,20 @@ class MainWindow(QWidget):
             self.status_bar.set_status("Нет SQL-запросов для выполнения.")
             return
 
+        if not retry:
+            self._cred_retry_done = False
+
+        self._retry_action = lambda: self._run_sql(sql, retry=True)
+
         targets = self._sql_build_targets()
 
         if not targets:
             self.status_bar.set_status("Не выбраны цели.")
+            return
+
+        targets = self._ensure_target_credentials(targets)
+
+        if not targets:
             return
 
         if not self.panel.write_enabled() and is_write_statement(sql):
@@ -1820,7 +2107,7 @@ class MainWindow(QWidget):
             f"TRACE server_changed: host={host}, "
             f"sql_busy={self._sql_busy}"
         )
-        self._sql_refresh_databases()
+        self._sql_refresh_databases(interactive=False)
 
     def _sql_scope_changed(self):
         self.panel.cb_server.setEnabled(
@@ -1910,7 +2197,9 @@ class MainWindow(QWidget):
             daemon=True,
         ).start()
 
-    def _sql_refresh_databases(self):
+    def _sql_refresh_databases(
+        self, interactive: bool = True, retry: bool = False,
+    ):
 
         if self._sql_busy:
             logger.action(
@@ -1923,6 +2212,22 @@ class MainWindow(QWidget):
         if not host:
             self._sql_error("Не выбран сервер.")
             return
+
+        if not retry and interactive:
+            self._cred_retry_done = False
+
+        self._retry_action = lambda: self._sql_refresh_databases(
+            interactive=True, retry=True,
+        )
+
+        if registry.needs_credentials(host):
+            if not interactive:
+                self.status_bar.set_status(
+                    "Не заданы учётные данные — нажмите «Обновить список БД»."
+                )
+                return
+            if not self._ensure_credentials(host):
+                return
 
         self.status_bar.set_status("Загрузка списка БД...")
         self._sql_busy = True
@@ -1939,7 +2244,7 @@ class MainWindow(QWidget):
 
     def _sql_clear(self):
 
-        self.table.clear_results()
+        self.table.reset_table()
         self.status_bar.set_status("Готово")
 
     def _set_export_ui(self, running: bool) -> None:
@@ -2050,11 +2355,24 @@ class MainWindow(QWidget):
         self.panel.set_busy(False)
         self._ensure_results_visible()
 
+        retry = self._cred_retry_pending
+        self._cred_retry_pending = None
+
+        if retry is not None:
+            QTimer.singleShot(0, retry)
+
     def _sql_target_started(self, index, total, host, database):
 
         self.status_bar.set_status(
             f"Выполнение ({index}/{total}) {host}.{database}"
         )
+
+    def _sql_single_target(self) -> bool:
+        req = self._last_sql_request
+        if req is None:
+            return False
+        targets = req[0]
+        return len(targets) == 1 and targets[0][1] != ALL_DATABASES
 
     def _sql_target_result(
         self,
@@ -2071,6 +2389,7 @@ class MainWindow(QWidget):
             rows,
             columns,
             message,
+            show_source=not self._sql_single_target(),
         )
 
         self.append_log(
@@ -2091,6 +2410,7 @@ class MainWindow(QWidget):
             [],
             [],
             f"ERROR: {message}",
+            show_source=not self._sql_single_target(),
         )
 
     def _sql_target_stopped(self, done, total):
@@ -2117,6 +2437,7 @@ class MainWindow(QWidget):
             rows,
             columns,
             message,
+            show_source=False,
         )
 
         self.status_bar.set_status(message)
@@ -2136,6 +2457,11 @@ class MainWindow(QWidget):
         )
 
         self.panel.set_busy(False)
+
+        if self._offer_credentials_retry(
+            self.panel.current_host() or "", message,
+        ):
+            self._cred_retry_pending = self._retry_action
 
     # ----------------------------------------------------------
     # Редактирование ячеек Results
@@ -2175,9 +2501,10 @@ class MainWindow(QWidget):
 
         result_columns = self._table_result_columns()
         lower_result = {name.lower(): name for name in result_columns}
+        off = self.table.source_offset
 
         editable = {
-            3 + i
+            off + i
             for i, name in enumerate(result_columns)
             if name.lower() in {col.lower() for col in ctx["columns"]}
         }
@@ -2193,7 +2520,9 @@ class MainWindow(QWidget):
             self.table.horizontalHeaderItem(col).text()
             if self.table.horizontalHeaderItem(col) is not None
             else ""
-            for col in range(3, self.table.columnCount())
+            for col in range(
+                self.table.source_offset, self.table.columnCount()
+            )
         ]
 
     def _update_edit_buttons(self) -> None:
@@ -2256,7 +2585,8 @@ class MainWindow(QWidget):
     def _apply_cell_edit(self, row, col, new_text, old_text) -> None:
 
         ctx = self._sql_edit_ctx
-        if ctx is None or col < 3:
+        off = self.table.source_offset
+        if ctx is None or col < off:
             return
 
         if self.query_thread.isRunning():
@@ -2266,10 +2596,10 @@ class MainWindow(QWidget):
             return
 
         result_columns = self._table_result_columns()
-        if col - 3 >= len(result_columns):
+        if col - off >= len(result_columns):
             return
 
-        column_name = result_columns[col - 3]
+        column_name = result_columns[col - off]
         lower_result = {name.lower(): name for name in result_columns}
 
         if column_name.lower() not in {
@@ -2282,7 +2612,7 @@ class MainWindow(QWidget):
             pk_name = lower_result.get(pk_col.lower())
             if pk_name is None:
                 return
-            pk_index = result_columns.index(pk_name) + 3
+            pk_index = result_columns.index(pk_name) + off
             pk_item = self.table.item(row, pk_index)
             pk_text = pk_item.text() if pk_item is not None else ""
             if pk_text == "Null":
@@ -2468,6 +2798,14 @@ class MainWindow(QWidget):
             self.status_bar.set_status("Нет MySQL-серверов для поиска.")
             return
 
+        servers = self._skip_servers_without_credentials(servers, "Поиск БД")
+
+        if not servers:
+            self.status_bar.set_status(
+                "Нет серверов с заданными учётными данными."
+            )
+            return
+
         # Поиск показывает результат в таблице Results с колонками
         # Server и Database.
         self.table.reset_table()
@@ -2574,13 +2912,24 @@ class MainWindow(QWidget):
 
         self.panel.set_search_busy(busy)
 
-    def _run_table_select(self, server: str, database: str, table: str):
+    def _run_table_select(
+        self, server: str, database: str, table: str, retry: bool = False,
+    ):
         """Выполняет SELECT * FROM `db`.`table` в фоновом потоке."""
         # Если поток занят (например, загрузкой списка БД) — останавливаем его,
         # чтобы SELECT гарантированно выполнился. KILL всех активных запросов
         # убирает зависший SELECT на сервере; ждём выхода потока штатно,
         # без terminate(): принудительное убийство потока оставило бы
         # соединение в пуле навсегда занятым.
+        if not retry:
+            self._cred_retry_done = False
+            if not self._ensure_credentials(server):
+                return
+
+        self._retry_action = lambda: self._run_table_select(
+            server, database, table, retry=True,
+        )
+
         if self._sql_busy:
             self.query_worker.stop()
             threading.Thread(
@@ -2921,7 +3270,9 @@ class MainWindow(QWidget):
         act_sql_refresh = menu_console.addAction(
             icon("refresh"), "Обновить список БД"
         )
-        act_sql_refresh.triggered.connect(self._sql_refresh_databases)
+        act_sql_refresh.triggered.connect(
+            lambda _checked=False: self._sql_refresh_databases()
+        )
         act_sql_refresh.setShortcut("Ctrl+Shift+R")
         menu_console.addSeparator()
         act_sql_clear = menu_console.addAction(

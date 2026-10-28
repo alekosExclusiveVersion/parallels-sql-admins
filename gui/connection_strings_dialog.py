@@ -24,6 +24,7 @@ gui/connection_strings_dialog.py
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -47,6 +48,7 @@ from common.connection_string import (
 from common.server_registry import ServerSpec, registry
 from gui import styles as theme_styles
 from gui.widgets.copyable_alert import CopyableMessageBox
+from gui.dialog_reset import enable_field_reset
 
 
 class ConnectionStringsDialog(QDialog):
@@ -58,6 +60,8 @@ class ConnectionStringsDialog(QDialog):
         self.resize(640, 460)
 
         self._build_ui()
+        enable_field_reset(self)
+
 
         theme_styles.register_theme_listener(self._refresh_theme)
         theme_styles.apply_window_appearance(self)
@@ -306,7 +310,12 @@ class ConnectionStringsDialog(QDialog):
         text = self.ed_export.toPlainText().strip()
 
         try:
-            Path(path).write_text(text + ("\n" if text else ""), encoding="utf-8")
+            target = Path(path)
+            target.write_text(text + ("\n" if text else ""), encoding="utf-8")
+            # Файл содержит пароли в открытом виде — закрываем доступ
+            # остальным пользователям системы.
+            if os.name != "nt":
+                target.chmod(0o600)
         except OSError as ex:
             CopyableMessageBox.warning(self, "Экспорт", f"Не удалось сохранить файл: {ex}")
             return

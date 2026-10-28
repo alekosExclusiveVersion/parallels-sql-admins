@@ -40,7 +40,7 @@ class PoolTimeout(TimeoutError):
 
 
 class _PooledConn:
-    __slots__ = ("conn", "in_use", "owner", "depth", "last_used")
+    __slots__ = ("conn", "in_use", "owner", "depth", "last_used", "stale")
 
     def __init__(self, conn: Any) -> None:
         self.conn = conn
@@ -48,6 +48,7 @@ class _PooledConn:
         self.owner: Optional[int] = None
         self.depth = 0
         self.last_used = 0.0
+        self.stale = False
 
 
 class _KeyPool:
@@ -240,20 +241,64 @@ class ConnectionPool:
                     pc.in_use = False
                     pc.owner = None
                     pc.last_used = time.monotonic()
-                    self._idle_count += 1
                 else:
                     # Релиз не владельцем (нештатно) — считаем свободным.
                     pc.in_use = False
                     pc.owner = None
                     pc.depth = 0
                     pc.last_used = time.monotonic()
+
+                if pc.stale:
+                    # Реквизиты сервера сменились: соединение закрываем,
+                    # в простой не возвращаем.
+                    self._remove_pc(kp, pc)
+                else:
                     self._idle_count += 1
+
+                if not kp.conns:
+                    self._entries.pop(key, None)
 
                 self._evict_key_locked(kp)
                 self._evict_global_locked()
                 self._total.release()
                 kp.slots.release()
                 return
+
+    def close_host(self, host: str) -> int:
+        """Сбрасывает соединения всех баз указанного хоста.
+
+        Простаивающие соединения закрываются сразу; занятые помечаются
+        stale и закрываются при release() — иначе можно оборвать
+        выполняющийся запрос. Возвращает число затронутых соединений.
+
+        Ключи пула строятся по строке хоста, переданной клиентом: она
+        бывает и «host», и «host:port», поэтому сравниваем и полное
+        значение, и часть без порта.
+        """
+        base = str(host).rsplit(":", 1)[0]
+        affected = 0
+
+        def matches(key_host: str) -> bool:
+            key_host = str(key_host)
+            return key_host == host or key_host.rsplit(":", 1)[0] == base
+
+        with self._lock:
+            for key in [k for k in self._entries if matches(k[0])]:
+                kp = self._entries.get(key)
+                if kp is None:
+                    continue
+
+                for pc in list(kp.conns):
+                    affected += 1
+                    if pc.in_use:
+                        pc.stale = True
+                        continue
+                    self._remove_pc(kp, pc)
+                    self._idle_count -= 1
+
+                if not kp.conns:
+                    self._entries.pop(key, None)
+        return affected
 
     def close_all(self) -> None:
         """Закрывает все соединения пула (завершение приложения)."""

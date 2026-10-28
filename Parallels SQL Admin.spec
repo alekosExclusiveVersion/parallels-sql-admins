@@ -18,6 +18,11 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 from common.version import APP_VERSION
 
+# Bundle ID зафиксирован навсегда: от него зависит профиль нотаризации.
+# НЕ менять без согласования (смена = новый профиль в Apple).
+BUNDLE_ID = 'com.alekos.parallels-sql-admin'
+ENTITLEMENTS = 'installer/macos/entitlements.plist'
+
 datas = [('config.ini', '.'), ('servers.reference.json', '.'), ('assets', 'assets')]
 binaries = []
 hiddenimports = []
@@ -86,9 +91,12 @@ if sys.platform == 'darwin':
         coll,
         name='Parallels SQL Admin.app',
         icon=icon_path,
-        bundle_identifier=None,
+        bundle_identifier=BUNDLE_ID,
+        entitlements_file=ENTITLEMENTS if os.path.exists(ENTITLEMENTS) else None,
         info_plist={
             'CFBundleShortVersionString': APP_VERSION,
             'CFBundleVersion': APP_VERSION,
+            'CFBundleDisplayName': 'Parallels SQL Admin',
+            'NSHighResolutionCapable': True,
         },
     )

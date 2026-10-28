@@ -349,6 +349,64 @@ class TestQueryWorkerScript(unittest.TestCase):
         self.assertIn("row(s) affected", message)
 
 
+class TestPrepareAndHintHooks(unittest.TestCase):
+    def setUp(self):
+        self.fake = FakeMySQL()
+        patcher = patch.object(qw, "client_for", lambda host: self.fake)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_prepare_passthrough_without_hook(self):
+        self.assertEqual(
+            qw.QueryWorker._prepare_user_statements(
+                self.fake, "h", "db", ["SELECT 1"],
+            ),
+            ["SELECT 1"],
+        )
+
+    def test_error_text_without_hook_returns_plain(self):
+        self.assertEqual(
+            qw.QueryWorker._error_text(
+                self.fake, "h", "db", RuntimeError("boom"),
+            ),
+            "boom",
+        )
+
+    def test_prepare_applied_when_client_supports_it(self):
+        self.fake.prepare_statements = (
+            lambda host, db, stmts: [s + " /*p*/" for s in stmts]
+        )
+        cur = FakeResultCursor(["id"], [{"id": 1}])
+        self.fake.conn = ScriptConn([cur])
+        worker = qw.QueryWorker()
+        worker.set_request("h", "db", "SELECT id FROM t", 1000)
+
+        worker._dispatch()
+
+        self.assertEqual(cur.executed, ["SELECT id FROM t /*p*/"])
+
+    def test_error_text_appends_hint(self):
+        self.fake.error_hint = lambda host, db, ex: "HINT"
+        self.assertEqual(
+            qw.QueryWorker._error_text(
+                self.fake, "h", "db", RuntimeError("boom"),
+            ),
+            "boom\nHINT",
+        )
+
+    def test_error_text_tolerates_failing_hook(self):
+        def bad_hint(host, db, ex):
+            raise RuntimeError("hook failed")
+
+        self.fake.error_hint = bad_hint
+        self.assertEqual(
+            qw.QueryWorker._error_text(
+                self.fake, "h", "db", RuntimeError("boom"),
+            ),
+            "boom",
+        )
+
+
 class TestQueryWorkerExport(unittest.TestCase):
     def setUp(self):
         self.fake = FakeMySQL()

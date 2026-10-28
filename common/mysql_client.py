@@ -169,16 +169,15 @@ class MySQLClient:
         """Закрывает все соединения пула (для CLI и завершения)."""
         self._pool.close_all()
 
+    def close_host(self, host: str) -> int:
+        """Сбрасывает соединения всех баз хоста (смена реквизитов)."""
+        return self._pool.close_host(host)
+
     @contextmanager
     def connect(self, host: str, database: str | None = None):
         conn = self._pool.acquire(host, database)
 
         try:
-            try:
-                with conn.cursor() as cur:
-                    cur.execute("SET SESSION sql_select_limit = 1000")
-            except Exception:
-                pass
             yield conn
         finally:
             self._pool.release(host, database, conn)

@@ -649,6 +649,37 @@ QComboBox#combo_select::drop-down{
     width:26px;
 }
 
+/* Выбор скрипта в строке Run/Stop — та же высота, что у кнопок */
+QComboBox#combo_script{
+    background:{input_bg};
+    border:1px solid {border};
+    border-radius:8px;
+    color:{text};
+    font-size:13px;
+    padding:3px 26px 3px 8px;
+    min-height:20px;
+    selection-background-color:{sel_bg};
+    selection-color:{sel_text};
+}
+
+QComboBox#combo_script:hover{
+    border-color:{border_strong};
+}
+
+QComboBox#combo_script:focus{
+    border:2px solid {accent};
+}
+
+QComboBox#combo_script:disabled{
+    color:{text_muted};
+    background:{hover_bg};
+}
+
+QComboBox#combo_script::drop-down{
+    border:none;
+    width:22px;
+}
+
 /* --- Автодополнение SQL (QCompleter) --- */
 QListView#CompletionPopup{
     background:{card};

@@ -11,6 +11,7 @@ env/
 # Build
 build/
 dist/
+release/
 *.egg-info/
 
 # Testing

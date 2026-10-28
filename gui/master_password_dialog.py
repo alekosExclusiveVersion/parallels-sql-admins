@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from gui.widgets.copyable_alert import CopyableMessageBox
+from gui.dialog_reset import enable_field_reset
 
 MIN_PASSWORD_LENGTH = 6
 
@@ -49,6 +50,9 @@ class MasterPasswordDialog(QDialog):
         )
         self.setMinimumWidth(420)
         self._build_ui()
+        enable_field_reset(self)
+
+
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)

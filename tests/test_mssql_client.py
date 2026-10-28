@@ -7,6 +7,7 @@ tests/test_mssql_client.py
 """
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from common.mssql_client import MSSQLClient
@@ -69,6 +70,70 @@ class TestMSSQLTestConnection(unittest.TestCase):
         ok, msg = self.client.test_connection("h", 1433, "u", "p")
         self.assertTrue(ok)
         mock_conn.close.assert_called_once()
+
+
+class TestMSSQLDatabaseSizes(unittest.TestCase):
+
+    def setUp(self):
+        self.client = MSSQLClient(cfg=_FakeConfig())
+
+    def _patched(self, ignore):
+        cfg = SimpleNamespace(
+            advanced=SimpleNamespace(ignore_databases=ignore)
+        )
+        return patch("common.mssql_client.config", cfg)
+
+    def test_size_counts_data_files_only(self):
+        captured = {}
+
+        def fake_query(host, sql):
+            captured["sql"] = sql
+            return [{"db": "vinpart", "total_bytes": 8 * 1024 * 2}]
+
+        with patch.object(self.client, "query", side_effect=fake_query), \
+             self._patched(set()):
+            sizes = self.client.database_sizes("h")
+
+        self.assertEqual(sizes, {"vinpart": 8 * 1024 * 2})
+        joined = " ".join(captured["sql"].split())
+        self.assertIn("type = 0", joined)
+
+    def test_database_files_returns_rows(self):
+        captured = {}
+
+        def fake_query(host, sql, database=None):
+            captured["database"] = database
+            return [
+                {"type_desc": "ROWS", "name": "vinpart_base",
+                 "physical_name": "d:\\data\\vinpart.mdf",
+                 "bytes": 52_095_901_696},
+                {"type_desc": "LOG", "name": "vinpart_log",
+                 "physical_name": "d:\\data\\vinpart.ldf", "bytes": 8_388_608},
+            ]
+
+        with patch.object(self.client, "query", side_effect=fake_query):
+            files = self.client.database_files("h", "vinpart")
+
+        self.assertEqual(captured["database"], "vinpart")
+        self.assertEqual(files, [
+            {"type": "ROWS", "name": "vinpart_base",
+             "file": "d:\\data\\vinpart.mdf", "bytes": 52_095_901_696},
+            {"type": "LOG", "name": "vinpart_log",
+             "file": "d:\\data\\vinpart.ldf", "bytes": 8_388_608},
+        ])
+
+    def test_size_excludes_ignored_databases(self):
+        def fake_query(host, sql):
+            return [
+                {"db": "prod", "total_bytes": 8 * 1024},
+                {"db": "skipped", "total_bytes": 8 * 1024},
+            ]
+
+        with patch.object(self.client, "query", side_effect=fake_query), \
+             self._patched({"skipped"}):
+            sizes = self.client.database_sizes("h")
+
+        self.assertEqual(sizes, {"prod": 8 * 1024})
 
 
 class TestMSSQLServerInfo(unittest.TestCase):

@@ -5,6 +5,7 @@
     {"host": "btk66-msk.tradesoft.ru", "engine": "mysql", "port": 3306, "name": ""},
     {"host": "eurotradeplus.tradesoft.ru", "engine": "mysql", "port": 3306, "name": ""},
     {"host": "ext4.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "ext4"},
+    {"host": "jedip.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "jedip"},
     {"host": "kz1.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "kz1"},
     {"host": "p5g21.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p5g21"},
     {"host": "p5g29.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p5g29"},
@@ -15,6 +16,7 @@
     {"host": "p7ru4.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru4"},
     {"host": "p7ru5.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru5"},
     {"host": "p7ru8.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "p7ru8"},
+    {"host": "spmotors-spb.tradesoft.ru", "engine": "mysql", "port": 3306, "name": "spmotors-spb"},
     {"host": "pg-sup.tradesoft.corp", "engine": "pgsql", "port": 5432, "name": "pg5432"},
     {"host": "pg-sup.tradesoft.corp", "engine": "pgsql", "port": 45432, "name": "pg45432"}
 ]

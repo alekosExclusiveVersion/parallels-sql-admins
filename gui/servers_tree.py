@@ -72,10 +72,12 @@ class ServersTree(QTreeWidget):
     selectionChangedNotify = Signal()
     addServerRequested = Signal()
     editServerRequested = Signal(str)        # server
+    credentialsRequested = Signal(str)       # server
     removeServerRequested = Signal(str)      # server
     dropDatabaseRequested = Signal(str, str)  # server, database
     detachDatabaseRequested = Signal(str, str)  # server, database
     shrinkLogRequested = Signal(str, str)  # server, database
+    fileSizesRequested = Signal(str, str)  # server, database
     attachDatabaseRequested = Signal(str)    # server
     restoreDatabaseRequested = Signal(str)   # server
 
@@ -194,9 +196,9 @@ class ServersTree(QTreeWidget):
     def format_size(size_bytes: int) -> str:
         size = float(size_bytes)
         for unit in ("B", "KB", "MB", "GB", "TB"):
-            if size < 1024 or unit == "TB":
+            if size < 1000 or unit == "TB":
                 return f"{size:.1f} {unit}"
-            size /= 1024
+            size /= 1000
         return f"{size:.1f} TB"
 
     # ----------------------------------------------------------
@@ -371,12 +373,18 @@ class ServersTree(QTreeWidget):
                 db_item = server_item.child(db_index)
                 db = self.db_name(db_item)
 
-                if not db or db not in sizes:
+                if not db:
+                    continue
+                if db in sizes:
+                    size = sizes[db]
+                elif self.db_server_name(db_item):
+                    size = 0
+                else:
                     continue
 
                 db_item.setText(
                     0,
-                    f"{db}  ({self.format_size(sizes[db])})",
+                    f"{db}  ({self.format_size(size)})",
                 )
             break
 
@@ -500,9 +508,13 @@ class ServersTree(QTreeWidget):
 
     def _context_menu(self, pos) -> None:
         """Контекстное меню: добавить/редактировать/удалить сервер."""
-        menu = QMenu(self)
+        menu = self._build_context_menu(self.itemAt(pos))
 
-        item = self.itemAt(pos)
+        menu.exec(self.viewport().mapToGlobal(pos))
+
+    def _build_context_menu(self, item) -> QMenu:
+        """Собирает контекстное меню для узла дерева (без показа)."""
+        menu = QMenu(self)
 
         action_add = menu.addAction(icon("add", 16, "@icon_accent"), "Добавить сервер")
         action_add.triggered.connect(self.addServerRequested)
@@ -519,6 +531,17 @@ class ServersTree(QTreeWidget):
             action_edit.triggered.connect(
                 self._menu_trigger(lambda: self.editServerRequested.emit(server))
             )
+
+            if engine != ENGINE_SQLITE:
+                action_credentials = menu.addAction(
+                    icon("lock", 16, "@icon_muted"),
+                    "Учётные данные…",
+                )
+                action_credentials.triggered.connect(
+                    self._menu_trigger(
+                        lambda: self.credentialsRequested.emit(server)
+                    )
+                )
 
             action_remove = menu.addAction(
                 icon("delete_outline", 16, "@icon_danger"),
@@ -589,7 +612,17 @@ class ServersTree(QTreeWidget):
                     )
                 )
 
-        menu.exec(self.viewport().mapToGlobal(pos))
+                action_files = menu.addAction(
+                    icon("storage", 16, "@icon_muted"),
+                    f"Размер файлов БД «{database}»…",
+                )
+                action_files.triggered.connect(
+                    self._menu_trigger(
+                        lambda: self.fileSizesRequested.emit(server, database)
+                    )
+                )
+
+        return menu
 
     @staticmethod
     def _menu_trigger(handler):

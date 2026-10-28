@@ -16,6 +16,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
+from backend.query_worker import ALL_DATABASES
+from gui.main_window import MainWindow
+
 _app = QApplication.instance() or QApplication([])
 
 
@@ -443,6 +446,56 @@ class TestRunTableSelectBusy(unittest.TestCase):
         self.assertTrue(result)
         self.assertTrue(_sql_busy)
         self.assertTrue(thread.isRunning())
+
+
+class TestSqlSingleTarget(unittest.TestCase):
+    def _window(self, request):
+        window = MainWindow.__new__(MainWindow)
+        window._last_sql_request = request
+        return window
+
+    def test_none_request_is_not_single(self):
+        self.assertFalse(self._window(None)._sql_single_target())
+
+    def test_single_concrete_target(self):
+        req = ([("host1", "db1")], "SELECT 1")
+        self.assertTrue(self._window(req)._sql_single_target())
+
+    def test_multi_targets_is_not_single(self):
+        req = ([("h1", "d1"), ("h2", "d2")], "SELECT 1")
+        self.assertFalse(self._window(req)._sql_single_target())
+
+    def test_single_all_databases_is_not_single(self):
+        req = ([("host1", ALL_DATABASES)], "SELECT 1")
+        self.assertFalse(self._window(req)._sql_single_target())
+
+    def test_target_result_hides_source_for_single_target(self):
+        window = MainWindow.__new__(MainWindow)
+        window._last_sql_request = ([("h", "db")], "SELECT 1")
+        calls = {}
+
+        class RecordingTable:
+            def fill_sql_result(self, *args, **kwargs):
+                calls["kwargs"] = kwargs
+
+        window.table = RecordingTable()
+        window.append_log = lambda *args: None
+        MainWindow._sql_target_result(window, "h", "db", [["x"]], ["c"], "ok")
+        self.assertFalse(calls["kwargs"]["show_source"])
+
+    def test_target_result_keeps_source_for_multi_targets(self):
+        window = MainWindow.__new__(MainWindow)
+        window._last_sql_request = ([("h1", "d1"), ("h2", "d2")], "SELECT 1")
+        calls = {}
+
+        class RecordingTable:
+            def fill_sql_result(self, *args, **kwargs):
+                calls["kwargs"] = kwargs
+
+        window.table = RecordingTable()
+        window.append_log = lambda *args: None
+        MainWindow._sql_target_result(window, "h1", "d1", [["x"]], ["c"], "ok")
+        self.assertTrue(calls["kwargs"]["show_source"])
 
 
 if __name__ == "__main__":

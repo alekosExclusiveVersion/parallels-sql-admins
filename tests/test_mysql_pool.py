@@ -508,5 +508,32 @@ class TestChunkHelper(unittest.TestCase):
         self.assertEqual([len(c) for c in chunks], [200, 200, 50])
 
 
+class TestCatalogNoSessionLimit(unittest.TestCase):
+    def test_server_catalog_returns_rows_beyond_1000(self):
+        rows = [
+            {"db": f"ar_{i:04d}", "table_name": "t", "total": 10}
+            for i in range(1500)
+        ]
+        factory = ConnFactory(result=rows)
+        client = MySQLClient()
+        client._open_connection = factory.open
+        client._discard_conn = lambda conn: conn.close()
+
+        sizes, tables = client.server_catalog("h1")
+
+        self.assertEqual(len(sizes), 1500)
+        self.assertIn("ar_1499", sizes)
+        self.assertIn("ar_1499", tables)
+        statements = [
+            sql
+            for conn in factory.conns
+            for sql, _ in conn.executions
+        ]
+        self.assertTrue(statements)
+        self.assertFalse(
+            any("sql_select_limit" in sql for sql in statements)
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

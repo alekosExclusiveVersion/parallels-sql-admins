@@ -115,7 +115,7 @@ class SearchableComboBox(QComboBox):
         self._completer = SearchComboCompleter(self)
         self.setCompleter(self._completer)
         self._completer.activated.connect(self._on_activated)
-        self._completer.popup().clicked.connect(self._on_popup_clicked)
+        self.lineEdit().setClearButtonEnabled(True)
         self.lineEdit().textChanged.connect(self._on_text_changed)
         self.lineEdit().installEventFilter(self)
         # eventFilter на попапе: перехват Enter/Escape/DOWN/UP
@@ -202,6 +202,11 @@ class SearchableComboBox(QComboBox):
         ]
 
     def _on_text_changed(self, text: str) -> None:
+        if not text:
+            if self.currentIndex() != -1:
+                self.setCurrentIndex(-1)
+            self._completer.popup().hide()
+            return
         if self._popup_manual:
             self._popup_manual = False
             return
@@ -213,7 +218,7 @@ class SearchableComboBox(QComboBox):
         if self._completer.popup().isVisible() and self._navigating:
             return
         self._completer.refresh(self._combo_items(), text, self._item_icon_name)
-        if not text or not self.isVisible():
+        if not self.isVisible():
             self._completer.popup().hide()
             return
         if self._completer.popup().isVisible():
@@ -244,7 +249,24 @@ class SearchableComboBox(QComboBox):
         self.setCurrentText(text)
         self._completer.popup().hide()
 
-    def _on_popup_clicked(self, index) -> None:
-        text = index.data(Qt.DisplayRole)
-        if text:
-            self._on_activated(str(text))
+    def showPopup(self) -> None:  # noqa: N802
+        """Клик по стрелке открывает наш попап, а не нативный список.
+
+        Нативный QComboBox-список не умеет искать по вхождению и не
+        показывает иконки пунктов, поэтому клик в любом месте поля ведёт
+        в тот же попап, что и ввод текста.
+        """
+        self._show_popup_on_click()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        """Любой клик по полю открывает попап, включая правую область.
+
+        Правая зона (стрелка/поле без фокуса) не доходит до eventFilter
+        на lineEdit — Qt делает там нативную обработку комбо. Перехват
+        до super() открывает наш попап даже когда клик мимо редактора.
+        """
+        if event.button() == Qt.LeftButton:
+            self._show_popup_on_click()
+            event.accept()
+            return
+        super().mousePressEvent(event)
