@@ -423,6 +423,55 @@ class PgsqlClient:
 
                 cur.execute(f'DROP DATABASE "{database}"')
 
+    def vacuum_full(self, host: str, database: str) -> None:
+        """Очищает файлы данных БД: VACUUM FULL (пересборка, освобождение).
+
+        VACUUM не выполняется внутри транзакции — соединение в autocommit.
+        Активные бэкенды целевой БД отбиваются перед VACUUM.
+        """
+        psycopg = _load_psycopg()
+
+        user, password, real_host, port = registry.credentials_for(host)
+
+        def _connect(dbname: str):
+            return psycopg.connect(
+                host=real_host,
+                port=port,
+                user=user,
+                password=password,
+                dbname=dbname,
+                autocommit=True,
+                connect_timeout=10,
+            )
+
+        conn = _connect("postgres")
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT pid FROM pg_stat_activity WHERE datname = %s",
+                    (database,),
+                )
+                rows = cur.fetchall() or []
+                for row in rows:
+                    pid = row.get("pid") if isinstance(row, dict) else row[0]
+                    if pid:
+                        try:
+                            cur.execute(
+                                "SELECT pg_terminate_backend(%s)",
+                                (int(pid),),
+                            )
+                        except Exception:
+                            pass
+        finally:
+            conn.close()
+
+        conn = _connect(database)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("VACUUM (FULL)")
+        finally:
+            conn.close()
+
     def server_catalog(
         self,
         host: str,
