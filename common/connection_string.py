@@ -21,6 +21,16 @@ common/connection_string.py
 порт по умолчанию для движка.
 
 Дополнительные параметры после host:port игнорируются — как ADO.NET
+(;connection_timeout=30), так и query-строка URI (?ssl=true). Имя БД в
+пути (JDBC: /dbname) тоже игнорируется.
+
+Поддерживаются JDBC-строки с префиксом jdbc: — префикс снимается,
+движок определяется по схеме (mysql/postgresql/sqlserver):
+
+    jdbc:mysql://192.168.0.5:3310/mydb?useSSL=false
+    jdbc:sqlserver://sql.local:1433;databaseName=master
+
+Дополнительные параметры после host:port игнорируются — как ADO.NET
 (;connection_timeout=30), так и query-строка URI (?ssl=true):
 
     sqlserver://sa:1qazXSW%40@192.168.128.160:1436;connection_timeout=30
@@ -101,10 +111,17 @@ def parse_connection_string(line: str) -> ServerSpec:
     if not raw:
         raise ValueError("Пустая строка подключения.")
 
+    # Поддержка JDBC URL: jdbc:mysql://host:port/db?... 
+    # (и jdbc:postgresql://, jdbc:sqlserver://). Снимаем префикс jdbc:,
+    # остальное разбирается как обычный URI; имя БД и параметры игнорируются.
+    if raw.lower().startswith("jdbc:"):
+        raw = raw[5:]
+
     if "://" not in raw:
         raise ValueError(
             f"Неверный формат '{raw}'. Ожидается engine://user:pass@host:port "
-            f"(например pgsql://postgres:secret@127.0.0.1:5432)."
+            f"(например pgsql://postgres:secret@127.0.0.1:5432) или "
+            f"JDBC-строка jdbc:mysql://host:port/db."
         )
 
     engine, rest = raw.split("://", 1)
@@ -117,9 +134,14 @@ def parse_connection_string(line: str) -> ServerSpec:
         host_part = rest
         credentials = ""
 
-    # Игнорируем дополнительные параметры после host:port:
-    # ADO.NET (;connection_timeout=30) и query-строку URI (?ssl=true).
-    host_part = host_part.split(";", 1)[0].split("?", 1)[0]
+    # Игнорируем путь БД (JDBC: /dbname), дополнительные параметры
+    # после host:port: ADO.NET (;connection_timeout=30) и query-строку
+    # URI (?ssl=true).
+    host_part = (
+        host_part.split("/", 1)[0]
+        .split(";", 1)[0]
+        .split("?", 1)[0]
+    )
 
     # host[:port]
     if host_part.startswith("["):

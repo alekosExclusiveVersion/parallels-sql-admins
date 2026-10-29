@@ -112,11 +112,15 @@ class ConnectionStringsDialog(QDialog):
             "Поддерживаются алиасы движков (sqlserver = mssql, "
             "postgres = pgsql) и параметры после порта "
             "(;connection_timeout=30 и ?key=value игнорируются).\n"
+            "Принимаются JDBC-строки с префиксом jdbc: "
+            "(jdbc:mysql://, jdbc:postgresql://, jdbc:sqlserver://) — "
+            "имя БД и параметры игнорируются.\n"
             "Примеры:\n"
             "  mysql://root:secret@db.example.com:3306\n"
             "  mssql://sa:Passw0rd@sql.corp.local:1433\n"
             "  sqlserver://sa:pw@10.0.0.5:1433;connection_timeout=30\n"
-            "  pgsql://postgres:my@pass@pg.example.com:5432"
+            "  pgsql://postgres:my@pass@pg.example.com:5432\n"
+            "  jdbc:mysql://192.168.0.5:3310/mydb?useSSL=false"
         )
         hint.setWordWrap(True)
         hint.setObjectName("MutedLabel")

@@ -160,6 +160,36 @@ class TestParse(unittest.TestCase):
         self.assertEqual(spec.host, "sql.local")
         self.assertEqual(spec.port, 1433)
 
+    def test_jdbc_mysql(self):
+        spec = parse_connection_string("jdbc:mysql://192.168.0.5:3310/")
+        self.assertEqual(spec.engine, ENGINE_MYSQL)
+        self.assertEqual(spec.host, "192.168.0.5")
+        self.assertEqual(spec.port, 3310)
+
+    def test_jdbc_mysql_with_db_and_params(self):
+        spec = parse_connection_string(
+            "jdbc:mysql://192.168.0.5:3310/mydb?useSSL=false"
+        )
+        self.assertEqual(spec.engine, ENGINE_MYSQL)
+        self.assertEqual(spec.host, "192.168.0.5")
+        self.assertEqual(spec.port, 3310)
+
+    def test_jdbc_postgresql(self):
+        spec = parse_connection_string(
+            "jdbc:postgresql://pg.local:5432/test"
+        )
+        self.assertEqual(spec.engine, ENGINE_PGSQL)
+        self.assertEqual(spec.host, "pg.local")
+        self.assertEqual(spec.port, 5432)
+
+    def test_jdbc_sqlserver(self):
+        spec = parse_connection_string(
+            "jdbc:sqlserver://sql.local:1433;databaseName=master"
+        )
+        self.assertEqual(spec.engine, ENGINE_MSSQL)
+        self.assertEqual(spec.host, "sql.local")
+        self.assertEqual(spec.port, 1433)
+
 
 if __name__ == "__main__":
     unittest.main()
