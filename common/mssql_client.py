@@ -290,9 +290,12 @@ class MSSQLClient:
 
     def database_sizes(self, host: str) -> dict[str, int]:
         sql = """
-SELECT DISTINCT DB_NAME(database_id) AS db
+SELECT
+    DB_NAME(database_id) AS db,
+    SUM(CAST(size AS BIGINT)) * 8 * 1024 AS total_bytes
 FROM sys.master_files
-WHERE type = 0
+WHERE type IN (0, 1)
+GROUP BY database_id
 """
         rows = self.query(host, sql)
 
@@ -303,14 +306,7 @@ WHERE type = 0
             db = row.get("db")
             if not db or db in ignore:
                 continue
-
-            used_sql = """
-SELECT SUM(CAST(FILEPROPERTY(name, 'SpaceUsed') AS BIGINT) * 8 * 1024) AS used_bytes
-FROM sys.master_files
-WHERE type = 0
-"""
-            used_rows = self.query(host, used_sql, database=db)
-            sizes[db] = int(used_rows[0]["used_bytes"] or 0) if used_rows else 0
+            sizes[db] = int(row.get("total_bytes") or 0)
 
         return sizes
 

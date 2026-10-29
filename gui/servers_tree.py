@@ -196,10 +196,15 @@ class ServersTree(QTreeWidget):
     def format_size(size_bytes: int) -> str:
         size = float(size_bytes)
         for unit in ("B", "KB", "MB", "GB", "TB"):
-            if size < 1000 or unit == "TB":
+            if size < 1024 or unit == "TB":
                 return f"{size:.1f} {unit}"
-            size /= 1000
+            size /= 1024
         return f"{size:.1f} TB"
+
+    @staticmethod
+    def format_size_mb2(size_bytes: int) -> str:
+        """Размер в мегабайтах с двумя знаками (как в SSMS «Общие»)."""
+        return f"{size_bytes / (1024 * 1024):.2f} MB"
 
     # ----------------------------------------------------------
     # Наполнение

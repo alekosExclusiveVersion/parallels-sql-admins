@@ -83,12 +83,12 @@ class TestMSSQLDatabaseSizes(unittest.TestCase):
         )
         return patch("common.mssql_client.config", cfg)
 
-    def test_size_counts_data_files_only(self):
+    def test_size_counts_data_and_log_files(self):
         captured = {}
 
-        def fake_query(host, sql, database=None):
+        def fake_query(host, sql):
             captured["sql"] = sql
-            return [{"db": "vinpart", "used_bytes": 8 * 1024 * 2}]
+            return [{"db": "vinpart", "total_bytes": 8 * 1024 * 2}]
 
         with patch.object(self.client, "query", side_effect=fake_query), \
              self._patched(set()):
@@ -96,7 +96,7 @@ class TestMSSQLDatabaseSizes(unittest.TestCase):
 
         self.assertEqual(sizes, {"vinpart": 8 * 1024 * 2})
         joined = " ".join(captured["sql"].split())
-        self.assertIn("type = 0", joined)
+        self.assertIn("type IN (0, 1)", joined)
 
     def test_database_files_returns_rows(self):
         captured = {}
@@ -126,10 +126,10 @@ class TestMSSQLDatabaseSizes(unittest.TestCase):
         ])
 
     def test_size_excludes_ignored_databases(self):
-        def fake_query(host, sql, database=None):
+        def fake_query(host, sql):
             return [
-                {"db": "prod", "used_bytes": 8 * 1024},
-                {"db": "skipped", "used_bytes": 8 * 1024},
+                {"db": "prod", "total_bytes": 8 * 1024},
+                {"db": "skipped", "total_bytes": 8 * 1024},
             ]
 
         with patch.object(self.client, "query", side_effect=fake_query), \

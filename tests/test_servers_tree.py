@@ -30,7 +30,7 @@ from gui.servers_tree import ServersTree, _ENGINE_ROLE
 class FakeSizesMySQL:
     def __init__(self):
         self.databases = ["ar_a", "ar_b"]
-        self.sizes = {"ar_a": 1000, "ar_b": 2000}
+        self.sizes = {"ar_a": 1024, "ar_b": 2048}
         self.tables = {
             "ar_a": [("t1", 600), ("t2", 400)],
             "ar_b": [("t3", 2000)],
@@ -113,7 +113,7 @@ class TestDbSizesWorker(unittest.TestCase):
         kinds = [e[0] for e in events]
         self.assertEqual(kinds[:3], ["names", "sizes", "tables"])
         self.assertEqual(events[0][2], ["ar_a", "ar_b"])
-        self.assertEqual(events[1][2], {"ar_a": 1000, "ar_b": 2000})
+        self.assertEqual(events[1][2], {"ar_a": 1024, "ar_b": 2048})
         self.assertEqual(events[2][2], self.fake.tables)
 
     def test_catalog_failure_still_shows_names(self):
@@ -192,7 +192,7 @@ class TestDbSizesWorker(unittest.TestCase):
             ), patch.object(
                 mssql,
                 "server_catalog",
-                return_value=({"ar_a": 1000}, {}),
+                return_value=({"ar_a": 1024}, {}),
             ):
                 worker = self._make_worker()
                 events = []
@@ -214,7 +214,7 @@ class TestDbSizesWorker(unittest.TestCase):
                 self._wait_until(events, 3)
 
         self.assertEqual(events[0], ("names", "mssql1", ["ar_a"]))
-        self.assertEqual(events[1], ("sizes", "mssql1", {"ar_a": 1000}))
+        self.assertEqual(events[1], ("sizes", "mssql1", {"ar_a": 1024}))
         self.assertEqual(events[2], ("tables", "mssql1", {}))
 
 
@@ -235,7 +235,7 @@ class TestServersTree(unittest.TestCase):
         self.assertEqual(srv.child(0).text(0), "ar_a")
         self.assertEqual(srv.child(0).child(0).text(0), "…")
 
-        tree.apply_sizes("srv1", {"ar_a": 1000, "ar_b": 2000})
+        tree.apply_sizes("srv1", {"ar_a": 1024, "ar_b": 2048})
 
         self.assertIn("srv1", srv.text(0))
         self.assertEqual(srv.child(0).text(0), "ar_a  (1.0 KB)")
@@ -361,7 +361,7 @@ class TestServersTree(unittest.TestCase):
         tree.set_servers(["srv1"])
         srv = tree.topLevelItem(0)
 
-        tree.apply_sizes("srv1", {"ar_a": 1000})
+        tree.apply_sizes("srv1", {"ar_a": 1024})
 
         self.assertEqual(srv.childCount(), 1)
         self.assertEqual(tree.db_name(srv.child(0)), "ar_a")
@@ -489,7 +489,7 @@ class TestServersTree(unittest.TestCase):
         tree.set_servers([("Prod", "db1")])
         srv = tree.topLevelItem(0)
 
-        tree.apply_sizes("db1", {"ar_a": 1000})
+        tree.apply_sizes("db1", {"ar_a": 1024})
 
         self.assertTrue(
             srv.text(0).startswith("Prod  (1.0 KB)")
@@ -569,7 +569,7 @@ class TestServersTree(unittest.TestCase):
         tree = ServersTree()
         tree.set_servers(["srv1"])
         tree.apply_databases("srv1", ["ar_b", "ar_a"])
-        tree.apply_sizes("srv1", {"ar_a": 1000, "ar_b": 2000})
+        tree.apply_sizes("srv1", {"ar_a": 1024, "ar_b": 2048})
 
         srv = tree.topLevelItem(0)
         dbs = [
@@ -582,18 +582,26 @@ class TestServersTree(unittest.TestCase):
         self.assertTrue(srv.child(0).text(0).startswith("ar_a  ("))
 
 
-class DecimalSizeFormatTest(unittest.TestCase):
-    """format_size делит на 1000 — десятичные единицы, как счёт в SSMS."""
+class BinarySizeFormatTest(unittest.TestCase):
+    """format_size делит на 1024 — двоичные единицы, как счёт в SSMS."""
 
     def test_bytes_and_kb(self):
-        self.assertEqual(ServersTree.format_size(999), "999.0 B")
-        self.assertEqual(ServersTree.format_size(1000), "1.0 KB")
+        self.assertEqual(ServersTree.format_size(1023), "1023.0 B")
+        self.assertEqual(ServersTree.format_size(1024), "1.0 KB")
         self.assertEqual(ServersTree.format_size(2048), "2.0 KB")
 
     def test_mb_gb_tb(self):
-        self.assertEqual(ServersTree.format_size(8_388_608), "8.4 MB")
-        self.assertEqual(ServersTree.format_size(52_095_901_696), "52.1 GB")
-        self.assertEqual(ServersTree.format_size(10**12 + 5 * 10**11), "1.5 TB")
+        self.assertEqual(ServersTree.format_size(1024**2), "1.0 MB")
+        self.assertEqual(ServersTree.format_size(8_388_608), "8.0 MB")
+        self.assertEqual(ServersTree.format_size(52_095_901_696), "48.5 GB")
+        self.assertEqual(ServersTree.format_size(10**12 + 5 * 10**11), "1.4 TB")
+
+    def test_size_in_mb_with_two_decimals(self):
+        self.assertEqual(ServersTree.format_size_mb2(0), "0.00 MB")
+        self.assertEqual(ServersTree.format_size_mb2(1024**2), "1.00 MB")
+        self.assertEqual(
+            ServersTree.format_size_mb2(49_663_442_944), "47362.75 MB"
+        )
 
 
 if __name__ == "__main__":

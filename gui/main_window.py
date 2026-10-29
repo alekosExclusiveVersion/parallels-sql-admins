@@ -1058,7 +1058,7 @@ class MainWindow(QWidget):
         data = sum(f["bytes"] for f in files if f["type"] == "ROWS")
         log = sum(f["bytes"] for f in files if f["type"] == "LOG")
 
-        fmt = self.servers_tree.format_size
+        fmt = self.servers_tree.format_size_mb2
         lines = [f"БД «{database}»:\n"]
         for f in files:
             kind = "Данные" if f["type"] == "ROWS" else (
