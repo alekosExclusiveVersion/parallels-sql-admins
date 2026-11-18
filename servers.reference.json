@@ -126,9 +126,9 @@
     "name": "pg45432"
   },
   {
-    "host": "mos.parts",
+    "host": "mosparts-msk-2.tradesoft.ru",
     "engine": "mysql",
     "port": 3306,
-    "name": "mos.parts"
+    "name": "mosparts-msk-2"
   }
 ]
