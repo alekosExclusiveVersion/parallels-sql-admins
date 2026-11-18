@@ -28,6 +28,25 @@ Rules:
 - CI builds for Windows + Ubuntu (GitHub Actions)
 - **Always rebuild** after every code change that affects the app (GUI, backend, common). Run `pyinstaller` and verify `CFBundleShortVersionString` in `dist/Parallels SQL Admin.app/Contents/Info.plist` before committing.
 
+## Реестр и эталон серверов
+
+`servers.reference.json` — источник списка хостов (пометка `ref`). На старте
+реестр синхронизируется с эталоном: новые хосты добавляются, исчезнувшие —
+удаляются. Записи **с введёнными реквизитами** (`user`/`password`) не удаляются
+даже при пропаже из эталона — остаются с предупреждением в логе.
+
+Чтобы правка эталона не требовала пересборки, его можно положить рядом с
+реестром:
+
+```
+~/Library/Application Support/Parallels SQL Admin/servers.reference.json
+```
+
+Он имеет приоритет над эталоном в бандле; из двух файлов берётся более свежий
+по mtime. Актуальный `servers.reference.json` из репозитория обновляйте копией
+в этот каталог (или пересборкой), иначе устаревший эталон вычистит новые хосты
+из реестра при следующем запуске.
+
 ## Security
 
 - **No secrets, keys, passwords, or encryption material** in the repository

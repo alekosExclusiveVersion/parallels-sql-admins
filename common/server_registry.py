@@ -323,12 +323,26 @@ class ServerRegistry:
     def _reference_file(self) -> Path:
         """Путь к эталону серверов (servers.reference.json).
 
-        В frozen-сборке файл лежит внутри бандла (sys._MEIPASS),
-        в dev-режиме — в корне репозитория.
+        Приоритет — внешняя копия рядом с реестром: её можно обновить без
+        пересборки приложения. Если внешней нет, берём файл из бандла
+        (sys._MEIPASS) или из корня репозитория в dev-режиме. Из двух
+        существующих файлов выбирается более свежий по mtime, чтобы
+        обновление из бандла тоже подхватывалось.
         """
+        app_copy = self.servers_file.parent / "servers.reference.json"
         if getattr(sys, "frozen", False):
-            return Path(sys._MEIPASS) / "servers.reference.json"
-        return Path(__file__).resolve().parent.parent / "servers.reference.json"
+            bundled = Path(sys._MEIPASS) / "servers.reference.json"
+        else:
+            bundled = Path(__file__).resolve().parent.parent / "servers.reference.json"
+        candidates = [p for p in (app_copy, bundled) if p.exists()]
+        if not candidates:
+            return app_copy
+        if len(candidates) == 1:
+            return candidates[0]
+        try:
+            return max(candidates, key=lambda p: p.stat().st_mtime)
+        except OSError:
+            return candidates[0]
 
     def _parse_reference(self) -> list[ServerSpec]:
         """Читает эталон servers.reference.json (best-effort).
@@ -410,6 +424,8 @@ class ServerRegistry:
         updated = 0
         removed = 0
         changed = False
+        removed_hosts: list[str] = []
+        added_hosts: list[str] = []
 
         merged: list[ServerSpec] = []
         for spec in self._specs:
@@ -428,8 +444,20 @@ class ServerRegistry:
                 continue
 
             if spec.ref:
+                # Хост исчез из эталона. Запись с реквизитами — это данные
+                # пользователя (пароль вводился вручную), её молча удалять
+                # нельзя: оставляем и пишем предупреждение. Удаляем только
+                # пустые записи, пришедшие из эталона.
+                if spec.user or spec.password:
+                    logger.warning(
+                        f"Сервер {spec.host}:{spec.port} отсутствует в эталоне, "
+                        "но содержит реквизиты — оставлен в реестре"
+                    )
+                    merged.append(spec)
+                    continue
                 removed += 1
                 changed = True
+                removed_hosts.append(spec.host)
                 continue
 
             # Legacy-«оболочка» от миграции servers.txt: без собственных
@@ -445,6 +473,7 @@ class ServerRegistry:
             if is_stale_shell:
                 removed += 1
                 changed = True
+                removed_hosts.append(spec.host)
                 continue
 
             merged.append(spec)  # пользовательский сервер
@@ -456,6 +485,7 @@ class ServerRegistry:
                 merged.append(spec)
                 added += 1
                 changed = True
+                added_hosts.append(spec.host)
 
         if changed:
             self._specs = merged
@@ -464,6 +494,12 @@ class ServerRegistry:
                     self.save(list(self._specs))
                 except Exception:
                     pass
+        if removed_hosts:
+            logger.info(
+                "Из реестра удалены (нет в эталоне): " + ", ".join(removed_hosts)
+            )
+        if added_hosts:
+            logger.info("Из эталона добавлены: " + ", ".join(added_hosts))
         return added, updated, removed
 
     def _migrate_from_txt(self) -> None:

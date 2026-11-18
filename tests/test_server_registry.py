@@ -235,6 +235,30 @@ class TestReferenceSync(unittest.TestCase):
             self.assertNotIn("gone.tradesoft.ru", hosts)
             self.assertIn("p7ru1.tradesoft.ru", hosts)
 
+    def test_keeps_reference_host_with_credentials_when_removed(self):
+        """Хост с введёнными реквизитами не удаляется при пропаже из эталона."""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            reg = self._reg(
+                tmp,
+                [
+                    {"host": "p7ru1.tradesoft.ru", "port": 0, "engine": "mysql",
+                     "user": "", "password": "", "name": "", "ref": True},
+                    {"host": "kept.tradesoft.ru", "port": 0, "engine": "mysql",
+                     "user": "koshkin", "password": "pw", "name": "kept",
+                     "ref": True},
+                ],
+                REFERENCE,
+            )
+
+            specs = reg.load()
+
+            by_host = {s.host: s for s in specs}
+            self.assertIn("kept.tradesoft.ru", by_host)
+            self.assertEqual(by_host["kept.tradesoft.ru"].user, "koshkin")
+            self.assertEqual(by_host["kept.tradesoft.ru"].password, "pw")
+            self.assertIn("p7ru1.tradesoft.ru", by_host)
+
     def test_removes_legacy_stale_shell_from_txt_migration(self):
         from common.config import config
 
